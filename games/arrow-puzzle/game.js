@@ -1,5 +1,6 @@
 /**
- * ➡️ 箭头消除（动态棋盘 + 飞出动画 + 方向颜色）
+ * ➡️ 箭头消除（长折线箭头版）
+ * 使用 ➜ 旋转实现四个方向，折线特征明显
  */
 if (!window.TOOL_REGISTRY) window.TOOL_REGISTRY = {};
 
@@ -7,27 +8,31 @@ let _arrowState = null;
 let _arrowHintTimer = null;
 
 const MAX_LEVEL = 268;
-const ARROWS = ['↑', '↓', '←', '→'];
-const DIR_MAP = {
-  '↑': { dx: 0, dy: -1 },
-  '↓': { dx: 0, dy: 1 },
-  '←': { dx: -1, dy: 0 },
-  '→': { dx: 1, dy: 0 }
-};
-// 可消除时颜色（亮色）
+// ---- 长折线箭头：使用 ➜ ----
+const ARROW_CHAR = '➜';
+const DIR_LIST = [
+  { id: 'up', dx: 0, dy: -1, rotate: 270 },
+  { id: 'down', dx: 0, dy: 1, rotate: 90 },
+  { id: 'left', dx: -1, dy: 0, rotate: 180 },
+  { id: 'right', dx: 1, dy: 0, rotate: 0 }
+];
 const DIR_COLORS = {
-  '↑': '#ff6b6b',
-  '↓': '#4dabf7',
-  '←': '#69db7c',
-  '→': '#da77f2'
+  'up': '#ff6b6b',
+  'down': '#4dabf7',
+  'left': '#69db7c',
+  'right': '#da77f2'
 };
-// 不可消除时颜色（暗灰色）
 const DIR_COLORS_DIMMED = {
-  '↑': '#6b4a4a',
-  '↓': '#4a5a6b',
-  '←': '#4a6b4a',
-  '→': '#6b4a6b'
+  'up': '#6b4a4a',
+  'down': '#4a5a6b',
+  'left': '#4a6b4a',
+  'right': '#6b4a6b'
 };
+
+function _getRandomDir() {
+  const idx = Math.floor(Math.random() * DIR_LIST.length);
+  return DIR_LIST[idx];
+}
 
 function _getBoardSize(level) {
   if (level <= 10) return 4;
@@ -48,12 +53,11 @@ function _generateGrid(level) {
   for (let r = 0; r < size; r++) {
     for (let c = 0; c < size; c++) {
       if (Math.random() < emptyRatio) continue;
-      const shuffled = ARROWS.slice().sort(() => Math.random() - 0.5);
+      const shuffled = DIR_LIST.slice().sort(() => Math.random() - 0.5);
       for (const dir of shuffled) {
-        const d = DIR_MAP[dir];
-        const nr = r + d.dy, nc = c + d.dx;
+        const nr = r + dir.dy, nc = c + dir.dx;
         if (nr < 0 || nr >= size || nc < 0 || nc >= size || grid[nr][nc] === null) {
-          grid[r][c] = dir;
+          grid[r][c] = { dir: dir.id, rotate: dir.rotate };
           placed++;
           break;
         }
@@ -65,13 +69,13 @@ function _generateGrid(level) {
     for (let r = 0; r < size; r++) {
       for (let c = 0; c < size; c++) {
         if (grid[r][c] === null) {
-          const candidates = ARROWS.filter(dir => {
-            const d = DIR_MAP[dir];
-            const nr = r + d.dy, nc = c + d.dx;
+          const candidates = DIR_LIST.filter(dir => {
+            const nr = r + dir.dy, nc = c + dir.dx;
             return nr < 0 || nr >= size || nc < 0 || nc >= size || grid[nr][nc] === null;
           });
           if (candidates.length > 0) {
-            grid[r][c] = candidates[0];
+            const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+            grid[r][c] = { dir: chosen.id, rotate: chosen.rotate };
             placed++;
           }
         }
@@ -84,10 +88,11 @@ function _generateGrid(level) {
 }
 
 function _isRemovable(grid, r, c) {
-  const ch = grid[r][c];
-  if (!ch) return false;
-  const d = DIR_MAP[ch];
-  const nr = r + d.dy, nc = c + d.dx;
+  const cell = grid[r][c];
+  if (!cell) return false;
+  const dirInfo = DIR_LIST.find(d => d.id === cell.dir);
+  if (!dirInfo) return false;
+  const nr = r + dirInfo.dy, nc = c + dirInfo.dx;
   const size = grid.length;
   return nr < 0 || nr >= size || nc < 0 || nc >= size || grid[nr][nc] === null;
 }
@@ -114,9 +119,9 @@ function renderArrowPuzzle() {
       <div id="arrowStatus" style="text-align:center;color:var(--text-muted);font-size:13px;margin-top:10px;min-height:20px;">${t('arrow.desc')}</div>
     </div>
     <style>
-      .arrow-cell{aspect-ratio:1;background:#2c3d4f;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:clamp(20px, 6vw, 34px);font-weight:900;color:#dbeafe;box-shadow:0 3px 0 #0f171f;transition:all 0.1s;cursor:pointer;touch-action:manipulation;text-shadow:0 2px 4px rgba(0,0,0,0.5);}
+      .arrow-cell{aspect-ratio:1;background:#2c3d4f;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:clamp(30px, 7.5vw, 46px);font-weight:900;color:#dbeafe;box-shadow:0 3px 0 #0f171f, inset 0 -2px 4px rgba(0,0,0,0.3);transition:all 0.1s;cursor:pointer;touch-action:manipulation;text-shadow:0 2px 4px rgba(0,0,0,0.5);}
       .arrow-cell:active{transform:scale(0.92);}
-      .arrow-cell.empty{background:#1f2c38;box-shadow:inset 0 2px 6px rgba(0,0,0,0.4);color:transparent;pointer-events:none;}
+      .arrow-cell.empty{background:#1f2c38;box-shadow:inset 0 2px 6px rgba(0,0,0,0.4);color:transparent;pointer-events:none;text-shadow:none;}
       .arrow-cell.wrong{background:#a03a4a!important;animation:shake 0.2s;}
       .arrow-cell.hint-highlight{box-shadow:0 0 16px #7ddf7d, 0 0 30px #7ddf7d;border:2px solid #7ddf7d;}
       .arrow-cell.flying{transition:transform 0.5s cubic-bezier(0.34, 1.1, 0.64, 1), opacity 0.5s;pointer-events:none;z-index:5;}
@@ -260,9 +265,9 @@ function _handleClick(r, c, cellEl) {
     return;
   }
 
-  // 飞出动画
-  const dir = grid[r][c];
-  const d = DIR_MAP[dir];
+  const cellData = grid[r][c];
+  const dirInfo = DIR_LIST.find(d => d.id === cellData.dir);
+  const d = { dx: dirInfo.dx, dy: dirInfo.dy };
   const size = s.size;
   const distance = size * 1.5;
   const tx = d.dx * distance;
@@ -289,7 +294,7 @@ function _handleClick(r, c, cellEl) {
   document.getElementById('arrowStatus').textContent = `✔️ 消除 1 个箭头`;
 
   requestAnimationFrame(() => {
-    clone.style.transform = `translate(${tx}px, ${ty}px)`;
+    clone.style.transform = `translate(${tx}px, ${ty}px) rotate(${cellData.rotate}deg)`;
     clone.style.opacity = '0';
   });
 
@@ -385,16 +390,18 @@ function _renderBoard() {
       if (val === null) {
         cell.classList.add('empty');
       } else {
-        cell.textContent = val;
+        cell.textContent = ARROW_CHAR;
+        cell.style.transform = `rotate(${val.rotate}deg)`;
         cell.dataset.r = r;
         cell.dataset.c = c;
         const removable = _isRemovable(grid, r, c);
-        const color = removable ? DIR_COLORS[val] : DIR_COLORS_DIMMED[val];
+        const color = removable ? DIR_COLORS[val.dir] : DIR_COLORS_DIMMED[val.dir];
         cell.style.color = color;
-        cell.style.textShadow = removable ? `0 0 12px ${color}40` : 'none';
+        cell.style.textShadow = removable ? `0 0 16px ${color}60, 0 2px 4px rgba(0,0,0,0.5)` : 'none';
         if (s.hintCells.some(([hr, hc]) => hr === r && hc === c)) {
           cell.classList.add('hint-highlight');
         }
+        cell.dataset.rotate = val.rotate;
       }
       board.appendChild(cell);
     }
