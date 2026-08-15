@@ -58,9 +58,9 @@
     .rank-item .addr {
       flex: 1;
       margin: 0 8px;
-      font-family: monospace;
-      font-size: 13px;
-      color: #8b93bd;
+      font-family: system-ui, "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+      color: #e8ebfa;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -114,25 +114,29 @@
 
 <script>
   (function() {
-    // ---- 显示昨日日期（每日凌晨2点更新） ----
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
     const dateStr = yesterday.toISOString().slice(0, 10);
     document.getElementById('todayDate').textContent = '📅 ' + dateStr;
 
-    // ---- 读取本地存储 ----
     let allData = {};
     try {
       allData = JSON.parse(localStorage.getItem('paxi_leaderboard') || '{}');
-    } catch (e) {
-      allData = {};
-    }
+    } catch (e) {}
 
-    // ---- 过滤昨日数据并按分数降序 ----
+    // 获取昵称映射
+    let nickMap = {};
+    try {
+      nickMap = JSON.parse(localStorage.getItem('paxi_nickname_map') || '{}');
+    } catch (e) {}
+
     const yesterdayData = Object.entries(allData)
       .filter(([addr, entry]) => entry && entry.date === dateStr)
-      .map(([addr, entry]) => ({ addr, score: entry.score }))
+      .map(([addr, entry]) => {
+        const displayName = nickMap[addr] || addr.slice(0, 6) + '…' + addr.slice(-4);
+        return { addr, score: entry.score, displayName };
+      })
       .sort((a, b) => b.score - a.score);
 
     const container = document.getElementById('rankList');
@@ -142,7 +146,6 @@
       return;
     }
 
-    // ---- 取前20名 ----
     const top = yesterdayData.slice(0, 20);
     let html = '';
     top.forEach((item, index) => {
@@ -151,17 +154,10 @@
       if (rank === 1) cls += ' top1';
       else if (rank === 2) cls += ' top2';
       else if (rank === 3) cls += ' top3';
-
-      // 地址脱敏显示
-      let addrDisplay = item.addr;
-      if (item.addr.length > 12) {
-        addrDisplay = item.addr.slice(0, 6) + '…' + item.addr.slice(-4);
-      }
-
       html += `
         <div class="${cls}">
           <span class="pos">#${rank}</span>
-          <span class="addr">${addrDisplay}</span>
+          <span class="addr">${item.displayName}</span>
           <span class="score">${item.score}</span>
         </div>
       `;
