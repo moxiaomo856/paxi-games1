@@ -1,13 +1,11 @@
 /**
- * ➡️ 箭头消除（极简稳定版）
- * 每个箭头判断：指向空格或边界 → 点击消除，否则扣心
- * 清空棋盘过关，支持268关
+ * ➡️ 箭头消除（动态棋盘 + 飞出动画 + 方向颜色）
  */
 if (!window.TOOL_REGISTRY) window.TOOL_REGISTRY = {};
 
 let _arrowState = null;
 let _arrowHintTimer = null;
-const SIZE = 8;
+
 const MAX_LEVEL = 268;
 const ARROWS = ['↑', '↓', '←', '→'];
 const DIR_MAP = {
@@ -16,20 +14,45 @@ const DIR_MAP = {
   '←': { dx: -1, dy: 0 },
   '→': { dx: 1, dy: 0 }
 };
+// 可消除时颜色（亮色）
+const DIR_COLORS = {
+  '↑': '#ff6b6b',
+  '↓': '#4dabf7',
+  '←': '#69db7c',
+  '→': '#da77f2'
+};
+// 不可消除时颜色（暗灰色）
+const DIR_COLORS_DIMMED = {
+  '↑': '#6b4a4a',
+  '↓': '#4a5a6b',
+  '←': '#4a6b4a',
+  '→': '#6b4a6b'
+};
 
-// 生成棋盘：每个箭头指向空格或边界
+function _getBoardSize(level) {
+  if (level <= 10) return 4;
+  if (level <= 50) return 5;
+  if (level <= 100) return 6;
+  if (level <= 150) return 7;
+  if (level <= 200) return 8;
+  if (level <= 250) return 8;
+  return 9;
+}
+
 function _generateGrid(level) {
+  const size = _getBoardSize(level);
   const emptyRatio = Math.min(0.5, 0.1 + level * 0.002);
-  const grid = Array(SIZE).fill(null).map(() => Array(SIZE).fill(null));
+  const grid = Array(size).fill(null).map(() => Array(size).fill(null));
   let placed = 0;
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
+
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
       if (Math.random() < emptyRatio) continue;
       const shuffled = ARROWS.slice().sort(() => Math.random() - 0.5);
       for (const dir of shuffled) {
         const d = DIR_MAP[dir];
         const nr = r + d.dy, nc = c + d.dx;
-        if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE || grid[nr][nc] === null) {
+        if (nr < 0 || nr >= size || nc < 0 || nc >= size || grid[nr][nc] === null) {
           grid[r][c] = dir;
           placed++;
           break;
@@ -37,39 +60,38 @@ function _generateGrid(level) {
       }
     }
   }
-  // 如果箭头太少，强行补几个
-  if (placed < 4) {
-    for (let r = 0; r < SIZE; r++) {
-      for (let c = 0; c < SIZE; c++) {
+
+  if (placed < Math.max(4, size)) {
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
         if (grid[r][c] === null) {
           const candidates = ARROWS.filter(dir => {
             const d = DIR_MAP[dir];
             const nr = r + d.dy, nc = c + d.dx;
-            return nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE || grid[nr][nc] === null;
+            return nr < 0 || nr >= size || nc < 0 || nc >= size || grid[nr][nc] === null;
           });
           if (candidates.length > 0) {
             grid[r][c] = candidates[0];
             placed++;
           }
         }
-        if (placed >= 8) break;
+        if (placed >= size * 2) break;
       }
-      if (placed >= 8) break;
+      if (placed >= size * 2) break;
     }
   }
   return grid;
 }
 
-// 检查箭头是否可消除（指向空格或边界）
 function _isRemovable(grid, r, c) {
   const ch = grid[r][c];
   if (!ch) return false;
   const d = DIR_MAP[ch];
   const nr = r + d.dy, nc = c + d.dx;
-  return nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE || grid[nr][nc] === null;
+  const size = grid.length;
+  return nr < 0 || nr >= size || nc < 0 || nc >= size || grid[nr][nc] === null;
 }
 
-// 渲染游戏界面
 function renderArrowPuzzle() {
   return `
     <div class="card">
@@ -80,7 +102,7 @@ function renderArrowPuzzle() {
         ${GamePay.roundsBadge('arrow-puzzle')}
       </div>
       <div style="position:relative;width:100%;max-width:400px;margin:0 auto;">
-        <div id="arrowBoard" style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;padding:10px;background:#18212b;border-radius:16px;width:100%;aspect-ratio:1;touch-action:manipulation;"></div>
+        <div id="arrowBoard" style="display:grid;gap:6px;padding:10px;background:#18212b;border-radius:16px;width:100%;aspect-ratio:1;touch-action:manipulation;"></div>
         <div id="gpOverlay" style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);border-radius:16px;z-index:10;padding:10px;box-sizing:border-box;overflow:hidden;">
           ${GamePay.overlayHTML('arrow-puzzle', 'game.arrow-puzzle', 'arrow.controls')}
         </div>
@@ -92,11 +114,12 @@ function renderArrowPuzzle() {
       <div id="arrowStatus" style="text-align:center;color:var(--text-muted);font-size:13px;margin-top:10px;min-height:20px;">${t('arrow.desc')}</div>
     </div>
     <style>
-      .arrow-cell{aspect-ratio:1;background:#2c3d4f;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#dbeafe;box-shadow:0 3px 0 #0f171f;transition:all 0.1s;cursor:pointer;touch-action:manipulation;}
+      .arrow-cell{aspect-ratio:1;background:#2c3d4f;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:clamp(20px, 6vw, 34px);font-weight:900;color:#dbeafe;box-shadow:0 3px 0 #0f171f;transition:all 0.1s;cursor:pointer;touch-action:manipulation;text-shadow:0 2px 4px rgba(0,0,0,0.5);}
       .arrow-cell:active{transform:scale(0.92);}
       .arrow-cell.empty{background:#1f2c38;box-shadow:inset 0 2px 6px rgba(0,0,0,0.4);color:transparent;pointer-events:none;}
       .arrow-cell.wrong{background:#a03a4a!important;animation:shake 0.2s;}
-      .arrow-cell.hint-highlight{background:#4f7a4f!important;box-shadow:0 0 12px #7ddf7d;}
+      .arrow-cell.hint-highlight{box-shadow:0 0 16px #7ddf7d, 0 0 30px #7ddf7d;border:2px solid #7ddf7d;}
+      .arrow-cell.flying{transition:transform 0.5s cubic-bezier(0.34, 1.1, 0.64, 1), opacity 0.5s;pointer-events:none;z-index:5;}
       @keyframes shake{0%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}100%{transform:translateX(0)}}
       #gpOverlay #gpOverlayTitle{font-size:20px!important;margin-bottom:8px!important;}
       #gpOverlay #gpOverlaySub{font-size:12px!important;margin-bottom:12px!important;line-height:1.5;max-width:100%;}
@@ -112,7 +135,6 @@ function bindArrowEvents() {
 function startArrowGame(keepScore) {
   if (!GamePay.consumeRound('arrow-puzzle')) return;
 
-  // 隐藏入场遮罩
   const overlay = document.getElementById('gpOverlay');
   if (overlay) overlay.style.display = 'none';
 
@@ -125,6 +147,7 @@ function startArrowGame(keepScore) {
     score: prevScore,
     hearts: prevHearts,
     grid: null,
+    size: _getBoardSize(prevLevel),
     gameOver: false,
     levelCompleted: false,
     hintCells: [],
@@ -180,8 +203,9 @@ function _giveHint() {
   }
   const cells = [];
   const grid = s.grid;
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
+  const size = s.size;
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
       if (grid[r][c] !== null && _isRemovable(grid, r, c)) {
         cells.push([r, c]);
       }
@@ -196,7 +220,7 @@ function _giveHint() {
   document.getElementById('arrowScore').textContent = s.score;
 
   const shuffled = cells.sort(() => Math.random() - 0.5);
-  s.hintCells = shuffled.slice(0, 5);
+  s.hintCells = shuffled.slice(0, Math.min(5, shuffled.length));
   _renderBoard();
 
   if (s.hintUsed === s.hintLimit) {
@@ -236,67 +260,98 @@ function _handleClick(r, c, cellEl) {
     return;
   }
 
-  // 消除箭头
+  // 飞出动画
+  const dir = grid[r][c];
+  const d = DIR_MAP[dir];
+  const size = s.size;
+  const distance = size * 1.5;
+  const tx = d.dx * distance;
+  const ty = d.dy * distance;
+
+  const clone = cellEl.cloneNode(true);
+  clone.style.position = 'absolute';
+  clone.style.left = cellEl.offsetLeft + 'px';
+  clone.style.top = cellEl.offsetTop + 'px';
+  clone.style.width = cellEl.offsetWidth + 'px';
+  clone.style.height = cellEl.offsetHeight + 'px';
+  clone.style.margin = '0';
+  clone.style.zIndex = '10';
+  clone.classList.add('flying');
+  const board = document.getElementById('arrowBoard');
+  board.appendChild(clone);
+
+  cellEl.classList.add('empty');
+  cellEl.textContent = '';
+  cellEl.style.background = '';
   grid[r][c] = null;
   s.score++;
   document.getElementById('arrowScore').textContent = s.score;
   document.getElementById('arrowStatus').textContent = `✔️ 消除 1 个箭头`;
+
+  requestAnimationFrame(() => {
+    clone.style.transform = `translate(${tx}px, ${ty}px)`;
+    clone.style.opacity = '0';
+  });
+
+  setTimeout(() => {
+    if (clone.parentNode) clone.parentNode.removeChild(clone);
+  }, 600);
+
   s.hintCells = [];
-  _renderBoard();
 
-  // 检查是否清空
-  let remaining = 0;
-  for (let rr = 0; rr < SIZE; rr++) {
-    for (let cc = 0; cc < SIZE; cc++) {
-      if (grid[rr][cc] !== null) remaining++;
-    }
-  }
-
-  if (remaining === 0) {
-    s.levelCompleted = true;
-    if (s.level >= MAX_LEVEL) {
-      document.getElementById('arrowStatus').textContent = '🏆🏆🏆 通关全部268关！';
-      s.gameOver = true;
-      GamePay.showGameOver('arrow-puzzle', `${t('pay.finalScore')}: <b style="color:var(--primary);font-size:20px;">${s.score}</b>`, { win: true, score: s.score });
-    } else {
-      document.getElementById('arrowStatus').textContent = `🎉 第 ${s.level} 关通过！进入下一关`;
-      setTimeout(() => {
-        s.level++;
-        s.hearts = 5;
-        s.gameOver = false;
-        s.levelCompleted = false;
-        s.grid = _generateGrid(s.level);
-        s.hintCells = [];
-        s.hintUsed = 0;
-        _renderBoard();
-        _updateUI();
-        document.getElementById('arrowStatus').textContent = `第 ${s.level} 关，加油！`;
-      }, 1200);
-    }
-  } else {
-    // 检查是否还有可消除的箭头
-    let hasRemovable = false;
-    for (let rr = 0; rr < SIZE; rr++) {
-      for (let cc = 0; cc < SIZE; cc++) {
-        if (grid[rr][cc] !== null && _isRemovable(grid, rr, cc)) {
-          hasRemovable = true;
-          break;
-        }
+  setTimeout(() => {
+    let remaining = 0;
+    for (let rr = 0; rr < size; rr++) {
+      for (let cc = 0; cc < size; cc++) {
+        if (grid[rr][cc] !== null) remaining++;
       }
-      if (hasRemovable) break;
     }
-    if (!hasRemovable) {
-      document.getElementById('arrowStatus').textContent = '♻️ 没有可消除的箭头，自动重置本关';
-      setTimeout(() => {
-        s.grid = _generateGrid(s.level);
-        s.hintCells = [];
-        s.hintUsed = 0;
-        _renderBoard();
-        _updateUI();
-        document.getElementById('arrowStatus').textContent = `第 ${s.level} 关已重置`;
-      }, 800);
+    if (remaining === 0) {
+      s.levelCompleted = true;
+      if (s.level >= MAX_LEVEL) {
+        document.getElementById('arrowStatus').textContent = '🏆🏆🏆 通关全部268关！';
+        s.gameOver = true;
+        GamePay.showGameOver('arrow-puzzle', `${t('pay.finalScore')}: <b style="color:var(--primary);font-size:20px;">${s.score}</b>`, { win: true, score: s.score });
+      } else {
+        document.getElementById('arrowStatus').textContent = `🎉 第 ${s.level} 关通过！进入下一关`;
+        setTimeout(() => {
+          s.level++;
+          s.hearts = 5;
+          s.gameOver = false;
+          s.levelCompleted = false;
+          s.size = _getBoardSize(s.level);
+          s.grid = _generateGrid(s.level);
+          s.hintCells = [];
+          s.hintUsed = 0;
+          _renderBoard();
+          _updateUI();
+          document.getElementById('arrowStatus').textContent = `第 ${s.level} 关，加油！`;
+        }, 1200);
+      }
+    } else {
+      let hasRemovable = false;
+      for (let rr = 0; rr < size; rr++) {
+        for (let cc = 0; cc < size; cc++) {
+          if (grid[rr][cc] !== null && _isRemovable(grid, rr, cc)) {
+            hasRemovable = true;
+            break;
+          }
+        }
+        if (hasRemovable) break;
+      }
+      if (!hasRemovable) {
+        document.getElementById('arrowStatus').textContent = '♻️ 没有可消除的箭头，自动重置本关';
+        setTimeout(() => {
+          s.grid = _generateGrid(s.level);
+          s.hintCells = [];
+          s.hintUsed = 0;
+          _renderBoard();
+          _updateUI();
+          document.getElementById('arrowStatus').textContent = `第 ${s.level} 关已重置`;
+        }, 800);
+      }
     }
-  }
+  }, 350);
 }
 
 function _resetLevel() {
@@ -317,10 +372,13 @@ function _renderBoard() {
   const s = _arrowState;
   const board = document.getElementById('arrowBoard');
   if (!board || !s) return;
+  const size = s.size;
+  board.style.gridTemplateColumns = `repeat(${size}, 1fr)`;
+
   board.innerHTML = '';
   const grid = s.grid;
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
       const cell = document.createElement('div');
       cell.className = 'arrow-cell';
       const val = grid[r][c];
@@ -330,6 +388,10 @@ function _renderBoard() {
         cell.textContent = val;
         cell.dataset.r = r;
         cell.dataset.c = c;
+        const removable = _isRemovable(grid, r, c);
+        const color = removable ? DIR_COLORS[val] : DIR_COLORS_DIMMED[val];
+        cell.style.color = color;
+        cell.style.textShadow = removable ? `0 0 12px ${color}40` : 'none';
         if (s.hintCells.some(([hr, hc]) => hr === r && hc === c)) {
           cell.classList.add('hint-highlight');
         }
