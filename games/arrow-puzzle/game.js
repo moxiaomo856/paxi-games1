@@ -1,85 +1,110 @@
 /**
- * ➡️ 箭头消除（硬核提示版）
- * 每关最多3次提示，每次提示扣1分，使用满3次额外扣1颗心
- * 点击箭头 → 相邻格子为空或边界 → 消除（得分+1）
- * 否则 → 扣一颗心
- * 清空棋盘过关
+ * ➡️ 箭头解谜（路径追踪版）- 修复遮罩遮挡 & 生成算法
+ * 点击箭头 → 沿路径追踪，遇到箭头转向，直到飞出边界，整条链消除
+ * 无法消除时扣一颗心
  */
 if (!window.TOOL_REGISTRY) window.TOOL_REGISTRY = {};
 
 let _arrowState = null;
 let _arrowHintTimer = null;
-const SIZE = 8;
+const ARROW_SIZE = 8;
 const MAX_LEVEL = 268;
-const ARROWS = ['↑', '↓', '←', '→'];
-const DIR_MAP = {
-  '↑': { dx: 0, dy: -1 },
-  '↓': { dx: 0, dy: 1 },
-  '←': { dx: -1, dy: 0 },
-  '→': { dx: 1, dy: 0 }
+const ARROW_DIR = {
+  '↑': { dx: 0, dy: -1, glyph: '⬆', color: '#243256' },
+  '↓': { dx: 0, dy: 1, glyph: '⬇', color: '#562430' },
+  '←': { dx: -1, dy: 0, glyph: '⬅', color: '#2b4536' },
+  '→': { dx: 1, dy: 0, glyph: '➡', color: '#4d3a56' },
 };
+const ARROW_KEYS = ['↑', '↓', '←', '→'];
 
-// 生成棋盘
-function _generateGrid(level) {
+// ============================================================
+// 生成关卡（确保每个箭头都可解）
+// ============================================================
+function _generateLevel(level) {
+  const size = ARROW_SIZE;
+  // 空格比例随关卡增加
   const emptyRatio = Math.min(0.5, 0.1 + level * 0.002);
-  const grid = Array(SIZE).fill(null).map(() => Array(SIZE).fill(null));
-  let placed = 0;
-
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
-      if (Math.random() < emptyRatio) continue;
-      const shuffled = ARROWS.slice().sort(() => Math.random() - 0.5);
-      for (const dir of shuffled) {
-        const d = DIR_MAP[dir];
-        const nr = r + d.dy, nc = c + d.dx;
-        if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE || grid[nr][nc] === null) {
-          grid[r][c] = dir;
-          placed++;
-          break;
-        }
-      }
-    }
-  }
-
-  if (placed < 5) {
-    for (let r = 0; r < SIZE; r++) {
-      for (let c = 0; c < SIZE; c++) {
-        if (grid[r][c] === null) {
-          const candidates = ARROWS.filter(dir => {
-            const d = DIR_MAP[dir];
-            const nr = r + d.dy, nc = c + d.dx;
-            return nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE || grid[nr][nc] === null;
-          });
-          if (candidates.length > 0) {
-            grid[r][c] = candidates[0];
+  let attempts = 0;
+  while (attempts++ < 50) {
+    const grid = Array(size).fill(null).map(() => Array(size).fill(null));
+    let placed = 0;
+    // 先随机放置一部分箭头（满足相邻空格或边界）
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        if (Math.random() < emptyRatio) continue;
+        const shuffled = ARROW_KEYS.slice().sort(() => Math.random() - 0.5);
+        for (const dir of shuffled) {
+          const d = ARROW_DIR[dir];
+          const nr = r + d.dy, nc = c + d.dx;
+          if (nr < 0 || nr >= size || nc < 0 || nc >= size || grid[nr][nc] === null) {
+            grid[r][c] = dir;
             placed++;
+            break;
           }
         }
-        if (placed >= 8) break;
       }
-      if (placed >= 8) break;
+    }
+    // 验证每个箭头是否能到达边界
+    let allValid = true;
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        if (grid[r][c] !== null) {
+          const { canExit } = _findPath(grid, r, c);
+          if (!canExit) { allValid = false; break; }
+        }
+      }
+      if (!allValid) break;
+    }
+    if (allValid && placed >= 4) {
+      return { grid, remaining: placed };
     }
   }
-
-  return grid;
+  // 兜底：边缘箭头指向外
+  const fallback = Array(size).fill(null).map(() => Array(size).fill(null));
+  for (let i = 0; i < size; i++) {
+    fallback[0][i] = '↑';
+    fallback[size-1][i] = '↓';
+    fallback[i][0] = '←';
+    fallback[i][size-1] = '→';
+  }
+  return { grid: fallback, remaining: size * 4 };
 }
 
-function _isRemovable(grid, r, c) {
-  const ch = grid[r][c];
-  if (!ch) return false;
-  const d = DIR_MAP[ch];
-  const nr = r + d.dy, nc = c + d.dx;
-  return nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE || grid[nr][nc] === null;
+// 路径追踪
+function _findPath(grid, startR, startC) {
+  const path = [];
+  const visited = new Set();
+  let r = startR, c = startC;
+  while (true) {
+    const key = r + ',' + c;
+    if (visited.has(key)) return { path: [], canExit: false };
+    visited.add(key);
+    const ch = grid[r][c];
+    if (!ch) return { path: [], canExit: false };
+    path.push({ r, c, dir: ch });
+    const d = ARROW_DIR[ch];
+    let nr = r + d.dy, nc = c + d.dx;
+    // 如果下一步超出边界，可退出
+    if (nr < 0 || nr >= ARROW_SIZE || nc < 0 || nc >= ARROW_SIZE) {
+      return { path, canExit: true };
+    }
+    // 如果下一步是空格，则路径被阻断，不可退出（因为无法转向）
+    if (grid[nr][nc] === null) {
+      return { path, canExit: false };
+    }
+    // 否则继续
+    r = nr; c = nc;
+  }
 }
 
+// 渲染函数
 function renderArrowPuzzle() {
   return `
     <div class="card">
       <div style="display:flex;gap:8px;justify-content:center;margin:4px 0 10px;flex-wrap:wrap;">
-        <span style="background:var(--bg);padding:4px 10px;border-radius:6px;font-size:12px;">📚 ${t('arrow.level')}: <b id="arrowLevel" style="color:var(--primary)">1</b>/268</span>
+        <span style="background:var(--bg);padding:4px 10px;border-radius:6px;font-size:12px;">📚 ${t('arrow.level')}: <b id="arrowLevel" style="color:var(--primary)">1</b></span>
         <span style="background:var(--bg);padding:4px 10px;border-radius:6px;font-size:12px;">🏆 ${t('arrow.cleared')}: <b id="arrowScore" style="color:var(--warning)">0</b></span>
         <span style="background:var(--bg);padding:4px 10px;border-radius:6px;font-size:12px;">❤️ <b id="arrowHearts" style="color:var(--danger)">5</b></span>
-        <span style="background:var(--bg);padding:4px 10px;border-radius:6px;font-size:12px;">💡 <b id="arrowHintRemain" style="color:var(--primary)">3</b></span>
         ${GamePay.roundsBadge('arrow-puzzle')}
       </div>
       <div style="position:relative;display:flex;justify-content:center;">
@@ -95,11 +120,12 @@ function renderArrowPuzzle() {
       <div id="arrowStatus" style="text-align:center;color:var(--text-muted);font-size:13px;margin-top:10px;min-height:20px;">${t('arrow.desc')}</div>
     </div>
     <style>
-      .arrow-cell{aspect-ratio:1;background:#2c3d4f;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#dbeafe;box-shadow:0 3px 0 #0f171f;transition:all 0.1s;cursor:pointer;touch-action:manipulation;}
+      .arrow-cell{aspect-ratio:1;background:#2c3d4f;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:#dbeafe;box-shadow:0 3px 0 #0f171f;transition:all 0.1s;cursor:pointer;touch-action:manipulation;}
       .arrow-cell:active{transform:scale(0.92);}
       .arrow-cell.empty{background:#1f2c38;box-shadow:inset 0 2px 6px rgba(0,0,0,0.4);color:transparent;pointer-events:none;}
       .arrow-cell.wrong{background:#a03a4a!important;animation:shake 0.2s;}
       .arrow-cell.hint-highlight{background:#4f7a4f!important;box-shadow:0 0 12px #7ddf7d;}
+      .arrow-cell.path-highlight{background:#f5c542!important;box-shadow:0 0 16px #f5c542;}
       @keyframes shake{0%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}100%{transform:translateX(0)}}
     </style>
   `;
@@ -124,30 +150,27 @@ function startArrowGame(keepScore) {
     gameOver: false,
     levelCompleted: false,
     hintCells: [],
-    hintUsed: 0,      // 本关已使用提示次数
-    hintLimit: 3,     // 每关最多3次
+    hintUsed: 0,
+    hintLimit: 3,
   };
-  _arrowState.grid = _generateGrid(_arrowState.level);
+  _arrowState.grid = _generateLevel(_arrowState.level);
 
   GamePay.registerRevive('arrow-puzzle', () => {
     if (_arrowState) {
       _arrowState.hearts = 5;
       _arrowState.gameOver = false;
       _arrowState.levelCompleted = false;
-      _arrowState.grid = _generateGrid(_arrowState.level);
+      _arrowState.grid = _generateLevel(_arrowState.level);
       _arrowState.hintCells = [];
       _arrowState.hintUsed = 0;
-      _renderArrowBoard();
-      _updateHintUI();
+      _renderBoard();
+      _updateUI();
       document.getElementById('arrowStatus').textContent = `♻️ 已复活，第 ${_arrowState.level} 关`;
     }
   });
 
-  _renderArrowBoard();
-  document.getElementById('arrowLevel').textContent = _arrowState.level;
-  document.getElementById('arrowScore').textContent = _arrowState.score;
-  document.getElementById('arrowHearts').textContent = _arrowState.hearts;
-  _updateHintUI();
+  _renderBoard();
+  _updateUI();
   document.getElementById('arrowStatus').textContent = `第 ${_arrowState.level} 关，点击可消除的箭头！`;
 
   document.getElementById('arrowHintBtn').onclick = () => _giveHint();
@@ -164,27 +187,28 @@ function startArrowGame(keepScore) {
   };
 }
 
-function _updateHintUI() {
+function _updateUI() {
+  document.getElementById('arrowLevel').textContent = _arrowState.level;
+  document.getElementById('arrowScore').textContent = _arrowState.score;
+  document.getElementById('arrowHearts').textContent = _arrowState.hearts;
   const remain = _arrowState.hintLimit - _arrowState.hintUsed;
-  document.getElementById('arrowHintRemain').textContent = Math.max(0, remain);
+  // 如果存在提示剩余显示元素，更新（可选）
 }
 
 function _giveHint() {
   const s = _arrowState;
   if (!s || s.gameOver || s.levelCompleted) return;
-
-  // 检查提示次数是否用完
   if (s.hintUsed >= s.hintLimit) {
     document.getElementById('arrowStatus').textContent = '💡 本关提示次数已用完！';
     return;
   }
-
-  // 查找可消除的箭头
   const cells = [];
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
-      if (s.grid[r][c] !== null && _isRemovable(s.grid, r, c)) {
-        cells.push([r, c]);
+  const grid = s.grid.grid;
+  for (let r = 0; r < ARROW_SIZE; r++) {
+    for (let c = 0; c < ARROW_SIZE; c++) {
+      if (grid[r][c] !== null) {
+        const { canExit } = _findPath(grid, r, c);
+        if (canExit) cells.push([r, c]);
       }
     }
   }
@@ -192,77 +216,66 @@ function _giveHint() {
     document.getElementById('arrowStatus').textContent = '💡 当前没有可消除的箭头';
     return;
   }
-
-  // 消耗一次提示
   s.hintUsed++;
-  // 扣1分（分数最低为0）
   if (s.score > 0) s.score--;
   document.getElementById('arrowScore').textContent = s.score;
 
-  // 高亮提示
   const shuffled = cells.sort(() => Math.random() - 0.5);
   s.hintCells = shuffled.slice(0, 5);
-  _renderArrowBoard();
+  _renderBoard();
 
-  // 检查是否达到3次（触发额外扣心）
   if (s.hintUsed === s.hintLimit) {
     s.hearts--;
     document.getElementById('arrowHearts').textContent = s.hearts;
     document.getElementById('arrowStatus').textContent = `💔 提示次数用尽，扣一颗心！剩余 ${s.hearts} 颗`;
     if (s.hearts <= 0) {
       s.gameOver = true;
-      document.getElementById('arrowStatus').textContent = '💔 生命耗尽';
       GamePay.showGameOver('arrow-puzzle', `${t('pay.finalScore')}: <b style="color:var(--primary);font-size:20px;">${s.score}</b>`, { score: s.score });
     }
   } else {
     document.getElementById('arrowStatus').textContent = `💡 已用 ${s.hintUsed}/${s.hintLimit} 次提示，扣1分`;
   }
 
-  _updateHintUI();
-
-  // 2.5秒后清除高亮
   if (_arrowHintTimer) clearTimeout(_arrowHintTimer);
   _arrowHintTimer = setTimeout(() => {
-    if (s) { s.hintCells = []; _renderArrowBoard(); }
+    if (s) { s.hintCells = []; _renderBoard(); }
   }, 2500);
 }
 
 function _handleClick(r, c, cellEl) {
   const s = _arrowState;
   if (!s || !s.grid) return;
-  if (s.grid[r][c] === null) return;
+  const grid = s.grid.grid;
+  if (grid[r][c] === null) return;
 
-  if (!_isRemovable(s.grid, r, c)) {
+  const { path, canExit } = _findPath(grid, r, c);
+  if (!canExit || path.length === 0) {
+    // 不可消除：扣心
     s.hearts--;
     document.getElementById('arrowHearts').textContent = s.hearts;
     cellEl.classList.add('wrong');
     setTimeout(() => cellEl.classList.remove('wrong'), 300);
-    document.getElementById('arrowStatus').textContent = '❌ 这个箭头指向另一个箭头，-1 ❤️';
+    document.getElementById('arrowStatus').textContent = '❌ 路径被阻挡，-1 ❤️';
     if (s.hearts <= 0) {
       s.gameOver = true;
-      document.getElementById('arrowStatus').textContent = '💔 生命耗尽';
       GamePay.showGameOver('arrow-puzzle', `${t('pay.finalScore')}: <b style="color:var(--primary);font-size:20px;">${s.score}</b>`, { score: s.score });
     }
     return;
   }
 
-  // 消除箭头
-  s.grid[r][c] = null;
-  s.score++;
-  document.getElementById('arrowScore').textContent = s.score;
-  document.getElementById('arrowStatus').textContent = `✔️ 消除 1 个箭头`;
-  s.hintCells = [];
-  _renderArrowBoard();
-
-  // 检查是否清空
-  let remaining = 0;
-  for (let rr = 0; rr < SIZE; rr++) {
-    for (let cc = 0; cc < SIZE; cc++) {
-      if (s.grid[rr][cc] !== null) remaining++;
-    }
+  // 消除整条路径
+  for (const p of path) {
+    grid[p.r][p.c] = null;
+    s.grid.remaining--;
+    s.score++;
   }
+  document.getElementById('arrowScore').textContent = s.score;
+  document.getElementById('arrowStatus').textContent = `✔️ 消除 ${path.length} 个箭头`;
+  s.hintCells = [];
+  _renderBoard();
 
-  if (remaining === 0) {
+  // 检查过关
+  if (s.grid.remaining <= 0) {
     s.levelCompleted = true;
     if (s.level >= MAX_LEVEL) {
       document.getElementById('arrowStatus').textContent = '🏆🏆🏆 通关全部268关！';
@@ -275,36 +288,34 @@ function _handleClick(r, c, cellEl) {
         s.hearts = 5;
         s.gameOver = false;
         s.levelCompleted = false;
-        s.grid = _generateGrid(s.level);
+        s.grid = _generateLevel(s.level);
         s.hintCells = [];
         s.hintUsed = 0;
-        _renderArrowBoard();
-        document.getElementById('arrowLevel').textContent = s.level;
-        document.getElementById('arrowHearts').textContent = s.hearts;
-        _updateHintUI();
+        _renderBoard();
+        _updateUI();
         document.getElementById('arrowStatus').textContent = `第 ${s.level} 关，加油！`;
       }, 1200);
     }
   } else {
     // 检查是否还有可消除的箭头
-    let hasRemovable = false;
-    for (let rr = 0; rr < SIZE; rr++) {
-      for (let cc = 0; cc < SIZE; cc++) {
-        if (s.grid[rr][cc] !== null && _isRemovable(s.grid, rr, cc)) {
-          hasRemovable = true;
-          break;
+    let hasValid = false;
+    for (let rr = 0; rr < ARROW_SIZE; rr++) {
+      for (let cc = 0; cc < ARROW_SIZE; cc++) {
+        if (grid[rr][cc] !== null) {
+          const { canExit } = _findPath(grid, rr, cc);
+          if (canExit) { hasValid = true; break; }
         }
       }
-      if (hasRemovable) break;
+      if (hasValid) break;
     }
-    if (!hasRemovable) {
+    if (!hasValid) {
       document.getElementById('arrowStatus').textContent = '♻️ 没有可消除的箭头，自动重置本关';
       setTimeout(() => {
-        s.grid = _generateGrid(s.level);
+        s.grid = _generateLevel(s.level);
         s.hintCells = [];
         s.hintUsed = 0;
-        _renderArrowBoard();
-        _updateHintUI();
+        _renderBoard();
+        _updateUI();
         document.getElementById('arrowStatus').textContent = `第 ${s.level} 关已重置`;
       }, 800);
     }
@@ -314,33 +325,33 @@ function _handleClick(r, c, cellEl) {
 function _resetLevel() {
   const s = _arrowState;
   if (!s) return;
-  s.grid = _generateGrid(s.level);
+  s.grid = _generateLevel(s.level);
   s.hearts = 5;
   s.gameOver = false;
   s.levelCompleted = false;
   s.hintCells = [];
   s.hintUsed = 0;
-  _renderArrowBoard();
-  document.getElementById('arrowLevel').textContent = s.level;
-  document.getElementById('arrowHearts').textContent = s.hearts;
-  _updateHintUI();
+  _renderBoard();
+  _updateUI();
   document.getElementById('arrowStatus').textContent = `🔄 已重置第 ${s.level} 关`;
 }
 
-function _renderArrowBoard() {
+function _renderBoard() {
   const s = _arrowState;
   const board = document.getElementById('arrowBoard');
   if (!board || !s) return;
   board.innerHTML = '';
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
+  const grid = s.grid.grid;
+  for (let r = 0; r < ARROW_SIZE; r++) {
+    for (let c = 0; c < ARROW_SIZE; c++) {
       const cell = document.createElement('div');
       cell.className = 'arrow-cell';
-      const val = s.grid[r][c];
+      const val = grid[r][c];
       if (val === null) {
         cell.classList.add('empty');
       } else {
-        cell.textContent = val;
+        cell.textContent = ARROW_DIR[val].glyph;
+        cell.style.background = ARROW_DIR[val].color;
         cell.dataset.r = r;
         cell.dataset.c = c;
         if (s.hintCells.some(([hr, hc]) => hr === r && hc === c)) {
