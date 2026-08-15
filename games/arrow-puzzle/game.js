@@ -107,9 +107,9 @@ function renderArrowPuzzle() {
         <span style="background:var(--bg);padding:4px 10px;border-radius:6px;font-size:12px;">❤️ <b id="arrowHearts" style="color:var(--danger)">5</b></span>
         ${GamePay.roundsBadge('arrow-puzzle')}
       </div>
-      <div style="position:relative;display:flex;justify-content:center;">
-        <div id="arrowBoard" style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;padding:10px;background:#18212b;border-radius:16px;width:100%;max-width:400px;touch-action:manipulation;"></div>
-        <div id="gpOverlay" style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);border-radius:8px;z-index:10;">
+      <div style="position:relative;width:100%;max-width:400px;margin:0 auto;">
+        <div id="arrowBoard" style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;padding:10px;background:#18212b;border-radius:16px;width:100%;aspect-ratio:1;touch-action:manipulation;"></div>
+        <div id="gpOverlay" style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);border-radius:16px;z-index:10;padding:10px;box-sizing:border-box;overflow:hidden;">
           ${GamePay.overlayHTML('arrow-puzzle', 'game.arrow-puzzle', 'arrow.controls')}
         </div>
       </div>
@@ -127,20 +127,41 @@ function renderArrowPuzzle() {
       .arrow-cell.hint-highlight{background:#4f7a4f!important;box-shadow:0 0 12px #7ddf7d;}
       .arrow-cell.path-highlight{background:#f5c542!important;box-shadow:0 0 16px #f5c542;}
       @keyframes shake{0%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}100%{transform:translateX(0)}}
+      #gpOverlay #gpOverlayTitle{font-size:20px!important;margin-bottom:8px!important;}
+      #gpOverlay #gpOverlaySub{font-size:12px!important;margin-bottom:12px!important;line-height:1.5;max-width:100%;}
+      #gpOverlay #gpStartBtn{min-width:160px!important;font-size:14px!important;padding:8px 16px!important;}
     </style>
   `;
 }
 
 function bindArrowEvents() {
   GamePay.bindStart('arrow-puzzle', () => startArrowGame());
+  // 预渲染初始棋盘，让页面加载时就能看到棋盘布局（overlay 仍然显示在上方）
+  setTimeout(() => {
+    if (!_arrowState) {
+      const tempGrid = _generateLevel(1);
+      _arrowState = {
+        level: 1, score: 0, hearts: 5,
+        grid: tempGrid,
+        gameOver: false, levelCompleted: false,
+        hintCells: [], hintUsed: 0, hintLimit: 3,
+        _previewOnly: true,
+      };
+      _renderBoard();
+    }
+  }, 50);
 }
 
 function startArrowGame(keepScore) {
   if (!GamePay.consumeRound('arrow-puzzle')) return;
 
-  const prevScore = keepScore && _arrowState ? _arrowState.score : 0;
-  const prevLevel = keepScore && _arrowState ? _arrowState.level : 1;
-  const prevHearts = keepScore && _arrowState ? _arrowState.hearts : 5;
+  // 隐藏入场遮罩层
+  const overlay = document.getElementById('gpOverlay');
+  if (overlay) overlay.style.display = 'none';
+
+  const prevScore = keepScore && _arrowState && !_arrowState._previewOnly ? _arrowState.score : 0;
+  const prevLevel = keepScore && _arrowState && !_arrowState._previewOnly ? _arrowState.level : 1;
+  const prevHearts = keepScore && _arrowState && !_arrowState._previewOnly ? _arrowState.hearts : 5;
 
   _arrowState = {
     level: prevLevel,
@@ -173,14 +194,20 @@ function startArrowGame(keepScore) {
   _updateUI();
   document.getElementById('arrowStatus').textContent = `第 ${_arrowState.level} 关，点击可消除的箭头！`;
 
-  document.getElementById('arrowHintBtn').onclick = () => _giveHint();
-  document.getElementById('arrowRestartBtn').onclick = () => _resetLevel();
+  document.getElementById('arrowHintBtn').onclick = () => {
+    if (_arrowState && _arrowState._previewOnly) return;
+    _giveHint();
+  };
+  document.getElementById('arrowRestartBtn').onclick = () => {
+    if (_arrowState && _arrowState._previewOnly) return;
+    _resetLevel();
+  };
 
   const board = document.getElementById('arrowBoard');
   board.onclick = (e) => {
     const cell = e.target.closest('.arrow-cell');
     if (!cell || cell.classList.contains('empty')) return;
-    if (_arrowState.gameOver || _arrowState.levelCompleted) return;
+    if (_arrowState._previewOnly || _arrowState.gameOver || _arrowState.levelCompleted) return;
     const r = parseInt(cell.dataset.r), c = parseInt(cell.dataset.c);
     if (isNaN(r) || isNaN(c)) return;
     _handleClick(r, c, cell);
@@ -197,7 +224,7 @@ function _updateUI() {
 
 function _giveHint() {
   const s = _arrowState;
-  if (!s || s.gameOver || s.levelCompleted) return;
+  if (!s || s._previewOnly || s.gameOver || s.levelCompleted) return;
   if (s.hintUsed >= s.hintLimit) {
     document.getElementById('arrowStatus').textContent = '💡 本关提示次数已用完！';
     return;
@@ -244,7 +271,7 @@ function _giveHint() {
 
 function _handleClick(r, c, cellEl) {
   const s = _arrowState;
-  if (!s || !s.grid) return;
+  if (!s || !s.grid || s._previewOnly) return;
   const grid = s.grid.grid;
   if (grid[r][c] === null) return;
 
@@ -324,7 +351,7 @@ function _handleClick(r, c, cellEl) {
 
 function _resetLevel() {
   const s = _arrowState;
-  if (!s) return;
+  if (!s || s._previewOnly) return;
   s.grid = _generateLevel(s.level);
   s.hearts = 5;
   s.gameOver = false;
