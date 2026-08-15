@@ -1,6 +1,6 @@
 /**
- * ➡️ 箭头消除（折线箭头版）
- * 使用 ➤ 旋转实现四个方向，视觉为粗折线箭头
+ * ➡️ 箭头消除（长方形棋盘 + 飞出动画）
+ * 棋盘尺寸：横向 5~8 列，纵向 7~13 行，竖屏适配
  */
 if (!window.TOOL_REGISTRY) window.TOOL_REGISTRY = {};
 
@@ -8,65 +8,64 @@ let _arrowState = null;
 let _arrowHintTimer = null;
 
 const MAX_LEVEL = 268;
-// ---- 折线箭头：统一使用 ➤，方向靠旋转 ----
-const ARROW_CHAR = '➤';
-const ARROWS = ['➤']; // 实际只用这一个字符
+
+// ---- 方向映射 ----
 const DIR_MAP = {
-  '➤': { dx: 0, dy: -1 }, // 但方向由旋转决定，这里仅作映射占位
+  '↑': { dx: 0, dy: -1 },
+  '↓': { dx: 0, dy: 1 },
+  '←': { dx: -1, dy: 0 },
+  '→': { dx: 1, dy: 0 }
 };
-// 但我们需要区分方向，用对象存储方向信息
-const DIR_LIST = [
-  { id: 'up', dx: 0, dy: -1, rotate: 270 },
-  { id: 'down', dx: 0, dy: 1, rotate: 90 },
-  { id: 'left', dx: -1, dy: 0, rotate: 180 },
-  { id: 'right', dx: 1, dy: 0, rotate: 0 }
-];
-// 方向颜色（和之前一样）
+const ARROWS = ['↑', '↓', '←', '→'];
+
+// ---- 方向颜色 ----
 const DIR_COLORS = {
-  'up': '#ff6b6b',
-  'down': '#4dabf7',
-  'left': '#69db7c',
-  'right': '#da77f2'
+  '↑': '#ff6b6b',
+  '↓': '#4dabf7',
+  '←': '#69db7c',
+  '→': '#da77f2'
 };
 const DIR_COLORS_DIMMED = {
-  'up': '#6b4a4a',
-  'down': '#4a5a6b',
-  'left': '#4a6b4a',
-  'right': '#6b4a6b'
+  '↑': '#6b4a4a',
+  '↓': '#4a5a6b',
+  '←': '#4a6b4a',
+  '→': '#6b4a6b'
 };
 
-// 生成棋盘时，随机选择方向
-function _getRandomDir() {
-  const idx = Math.floor(Math.random() * DIR_LIST.length);
-  return DIR_LIST[idx];
-}
-
+// ============================================================
+// 棋盘尺寸：返回 { cols, rows }，cols 控制横向，rows 控制纵向
+// ============================================================
 function _getBoardSize(level) {
-  if (level <= 10) return 6;
-  if (level <= 50) return 7;
-  if (level <= 100) return 8;
-  if (level <= 150) return 9;
-  if (level <= 200) return 10;
-  if (level <= 250) return 11;
-  return 12;
+  if (level <= 10) return { cols: 5, rows: 7 };
+  if (level <= 50) return { cols: 5, rows: 8 };
+  if (level <= 100) return { cols: 6, rows: 9 };
+  if (level <= 150) return { cols: 6, rows: 10 };
+  if (level <= 200) return { cols: 7, rows: 11 };
+  if (level <= 250) return { cols: 7, rows: 12 };
+  return { cols: 8, rows: 13 };  // 251~268
 }
 
+// ============================================================
+// 生成棋盘
+// ============================================================
 function _generateGrid(level) {
   const size = _getBoardSize(level);
+  const cols = size.cols;
+  const rows = size.rows;
   const emptyRatio = Math.min(0.5, 0.1 + level * 0.002);
-  const grid = Array(size).fill(null).map(() => Array(size).fill(null));
+  // grid 是 [rows][cols]
+  const grid = Array(rows).fill(null).map(() => Array(cols).fill(null));
   let placed = 0;
 
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
       if (Math.random() < emptyRatio) continue;
-      // 尝试随机方向
-      const shuffled = DIR_LIST.slice().sort(() => Math.random() - 0.5);
+      const shuffled = ARROWS.slice().sort(() => Math.random() - 0.5);
       for (const dir of shuffled) {
-        const nr = r + dir.dy, nc = c + dir.dx;
-        if (nr < 0 || nr >= size || nc < 0 || nc >= size || grid[nr][nc] === null) {
-          // 存储方向信息
-          grid[r][c] = { dir: dir.id, rotate: dir.rotate };
+        const d = DIR_MAP[dir];
+        const nr = r + d.dy, nc = c + d.dx;
+        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols || grid[nr][nc] === null) {
+          grid[r][c] = dir;
           placed++;
           break;
         }
@@ -74,39 +73,46 @@ function _generateGrid(level) {
     }
   }
 
-  if (placed < Math.max(4, size)) {
-    for (let r = 0; r < size; r++) {
-      for (let c = 0; c < size; c++) {
+  // 如果箭头太少，强行补一些
+  const minPlaced = Math.max(4, Math.min(cols, rows));
+  if (placed < minPlaced) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
         if (grid[r][c] === null) {
-          const candidates = DIR_LIST.filter(dir => {
-            const nr = r + dir.dy, nc = c + dir.dx;
-            return nr < 0 || nr >= size || nc < 0 || nc >= size || grid[nr][nc] === null;
+          const candidates = ARROWS.filter(dir => {
+            const d = DIR_MAP[dir];
+            const nr = r + d.dy, nc = c + d.dx;
+            return nr < 0 || nr >= rows || nc < 0 || nc >= cols || grid[nr][nc] === null;
           });
           if (candidates.length > 0) {
-            const chosen = candidates[Math.floor(Math.random() * candidates.length)];
-            grid[r][c] = { dir: chosen.id, rotate: chosen.rotate };
+            grid[r][c] = candidates[0];
             placed++;
           }
         }
-        if (placed >= size * 2) break;
+        if (placed >= minPlaced * 2) break;
       }
-      if (placed >= size * 2) break;
+      if (placed >= minPlaced * 2) break;
     }
   }
   return grid;
 }
 
+// ============================================================
 // 检查箭头是否可消除（指向空格或边界）
+// ============================================================
 function _isRemovable(grid, r, c) {
-  const cell = grid[r][c];
-  if (!cell) return false;
-  const dirInfo = DIR_LIST.find(d => d.id === cell.dir);
-  if (!dirInfo) return false;
-  const nr = r + dirInfo.dy, nc = c + dirInfo.dx;
-  const size = grid.length;
-  return nr < 0 || nr >= size || nc < 0 || nc >= size || grid[nr][nc] === null;
+  const ch = grid[r][c];
+  if (!ch) return false;
+  const d = DIR_MAP[ch];
+  const nr = r + d.dy, nc = c + d.dx;
+  const rows = grid.length;
+  const cols = grid[0].length;
+  return nr < 0 || nr >= rows || nc < 0 || nc >= cols || grid[nr][nc] === null;
 }
 
+// ============================================================
+// 渲染
+// ============================================================
 function renderArrowPuzzle() {
   return `
     <div class="card">
@@ -116,8 +122,8 @@ function renderArrowPuzzle() {
         <span style="background:var(--bg);padding:4px 10px;border-radius:6px;font-size:12px;">❤️ <b id="arrowHearts" style="color:var(--danger)">5</b></span>
         ${GamePay.roundsBadge('arrow-puzzle')}
       </div>
-      <div style="position:relative;width:100%;max-width:400px;margin:0 auto;">
-        <div id="arrowBoard" style="display:grid;gap:6px;padding:10px;background:#18212b;border-radius:16px;width:100%;aspect-ratio:1;touch-action:manipulation;"></div>
+      <div style="position:relative;width:100%;max-width:420px;margin:0 auto;">
+        <div id="arrowBoard" style="display:grid;gap:5px;padding:10px;background:#18212b;border-radius:16px;width:100%;touch-action:manipulation;"></div>
         <div id="gpOverlay" style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);border-radius:16px;z-index:10;padding:10px;box-sizing:border-box;overflow:hidden;">
           ${GamePay.overlayHTML('arrow-puzzle', 'game.arrow-puzzle', 'arrow.controls')}
         </div>
@@ -129,12 +135,43 @@ function renderArrowPuzzle() {
       <div id="arrowStatus" style="text-align:center;color:var(--text-muted);font-size:13px;margin-top:10px;min-height:20px;">${t('arrow.desc')}</div>
     </div>
     <style>
-      .arrow-cell{aspect-ratio:1;background:#2c3d4f;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:clamp(28px, 7vw, 42px);font-weight:900;color:#dbeafe;box-shadow:0 3px 0 #0f171f, inset 0 -2px 4px rgba(0,0,0,0.3);transition:all 0.1s;cursor:pointer;touch-action:manipulation;text-shadow:0 2px 4px rgba(0,0,0,0.5);}
+      .arrow-cell{
+        aspect-ratio:1;
+        background:#2c3d4f;
+        border-radius:8px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        font-size:clamp(20px, 5.5vw, 36px);
+        font-weight:900;
+        color:#dbeafe;
+        box-shadow:0 3px 0 #0f171f, inset 0 -2px 4px rgba(0,0,0,0.3);
+        transition:all 0.1s;
+        cursor:pointer;
+        touch-action:manipulation;
+        text-shadow:0 2px 4px rgba(0,0,0,0.5);
+      }
       .arrow-cell:active{transform:scale(0.92);}
-      .arrow-cell.empty{background:#1f2c38;box-shadow:inset 0 2px 6px rgba(0,0,0,0.4);color:transparent;pointer-events:none;text-shadow:none;}
+      .arrow-cell.empty{
+        background:#1f2c38;
+        box-shadow:inset 0 2px 6px rgba(0,0,0,0.4);
+        color:transparent;
+        pointer-events:none;
+        text-shadow:none;
+      }
       .arrow-cell.wrong{background:#a03a4a!important;animation:shake 0.2s;}
-      .arrow-cell.hint-highlight{box-shadow:0 0 16px #7ddf7d, 0 0 30px #7ddf7d;border:2px solid #7ddf7d;}
-      .arrow-cell.flying{transition:transform 0.5s cubic-bezier(0.34, 1.1, 0.64, 1), opacity 0.5s;pointer-events:none;z-index:5;}
+      .arrow-cell.hint-highlight{
+        box-shadow:0 0 16px #7ddf7d, 0 0 30px #7ddf7d;
+        border:2px solid #7ddf7d;
+      }
+      .arrow-cell.flying{
+        transition:transform 0.5s cubic-bezier(0.34, 1.1, 0.64, 1), opacity 0.5s;
+        pointer-events:none;
+        z-index:5;
+      }
+      .arrow-cell.dimmed .arrow-shaft{opacity:0.4;}
+      .arrow-cell.dimmed .arrow-head{opacity:0.4;}
+
       @keyframes shake{0%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}100%{transform:translateX(0)}}
       #gpOverlay #gpOverlayTitle{font-size:20px!important;margin-bottom:8px!important;}
       #gpOverlay #gpOverlaySub{font-size:12px!important;margin-bottom:12px!important;line-height:1.5;max-width:100%;}
@@ -147,6 +184,9 @@ function bindArrowEvents() {
   GamePay.bindStart('arrow-puzzle', () => startArrowGame());
 }
 
+// ============================================================
+// 游戏控制
+// ============================================================
 function startArrowGame(keepScore) {
   if (!GamePay.consumeRound('arrow-puzzle')) return;
 
@@ -218,9 +258,10 @@ function _giveHint() {
   }
   const cells = [];
   const grid = s.grid;
-  const size = s.size;
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
+  const rows = s.size.rows;
+  const cols = s.size.cols;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
       if (grid[r][c] !== null && _isRemovable(grid, r, c)) {
         cells.push([r, c]);
       }
@@ -262,6 +303,7 @@ function _handleClick(r, c, cellEl) {
   const grid = s.grid;
   if (grid[r][c] === null) return;
 
+  // ---- 判断是否可消除 ----
   if (!_isRemovable(grid, r, c)) {
     s.hearts--;
     document.getElementById('arrowHearts').textContent = s.hearts;
@@ -275,16 +317,15 @@ function _handleClick(r, c, cellEl) {
     return;
   }
 
-  // 获取方向信息用于动画
-  const cellData = grid[r][c];
-  const dirInfo = DIR_LIST.find(d => d.id === cellData.dir);
-  const d = { dx: dirInfo.dx, dy: dirInfo.dy };
-  const size = s.size;
-  const distance = size * 1.5;
+  // ---- 飞出动画 ----
+  const dir = grid[r][c];
+  const d = DIR_MAP[dir];
+  const rows = s.size.rows;
+  const cols = s.size.cols;
+  const distance = Math.max(cols, rows) * 1.5;
   const tx = d.dx * distance;
   const ty = d.dy * distance;
 
-  // 克隆元素
   const clone = cellEl.cloneNode(true);
   clone.style.position = 'absolute';
   clone.style.left = cellEl.offsetLeft + 'px';
@@ -297,7 +338,6 @@ function _handleClick(r, c, cellEl) {
   const board = document.getElementById('arrowBoard');
   board.appendChild(clone);
 
-  // 清空格子
   cellEl.classList.add('empty');
   cellEl.textContent = '';
   cellEl.style.background = '';
@@ -306,9 +346,8 @@ function _handleClick(r, c, cellEl) {
   document.getElementById('arrowScore').textContent = s.score;
   document.getElementById('arrowStatus').textContent = `✔️ 消除 1 个箭头`;
 
-  // 动画
   requestAnimationFrame(() => {
-    clone.style.transform = `translate(${tx}px, ${ty}px) rotate(${cellData.rotate}deg)`;
+    clone.style.transform = `translate(${tx}px, ${ty}px)`;
     clone.style.opacity = '0';
   });
 
@@ -318,10 +357,11 @@ function _handleClick(r, c, cellEl) {
 
   s.hintCells = [];
 
+  // ---- 延迟检查是否清空 ----
   setTimeout(() => {
     let remaining = 0;
-    for (let rr = 0; rr < size; rr++) {
-      for (let cc = 0; cc < size; cc++) {
+    for (let rr = 0; rr < rows; rr++) {
+      for (let cc = 0; cc < cols; cc++) {
         if (grid[rr][cc] !== null) remaining++;
       }
     }
@@ -348,9 +388,10 @@ function _handleClick(r, c, cellEl) {
         }, 1200);
       }
     } else {
+      // 检查是否还有可消除的箭头
       let hasRemovable = false;
-      for (let rr = 0; rr < size; rr++) {
-        for (let cc = 0; cc < size; cc++) {
+      for (let rr = 0; rr < rows; rr++) {
+        for (let cc = 0; cc < cols; cc++) {
           if (grid[rr][cc] !== null && _isRemovable(grid, rr, cc)) {
             hasRemovable = true;
             break;
@@ -387,37 +428,43 @@ function _resetLevel() {
   document.getElementById('arrowStatus').textContent = `🔄 已重置第 ${s.level} 关`;
 }
 
+// ============================================================
+// 渲染棋盘
+// ============================================================
 function _renderBoard() {
   const s = _arrowState;
   const board = document.getElementById('arrowBoard');
   if (!board || !s) return;
-  const size = s.size;
-  board.style.gridTemplateColumns = `repeat(${size}, 1fr)`;
+  const cols = s.size.cols;
+  const rows = s.size.rows;
+
+  // 根据列数和行数设置网格
+  board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  board.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+  board.style.aspectRatio = `${cols} / ${rows}`;
 
   board.innerHTML = '';
   const grid = s.grid;
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
       const cell = document.createElement('div');
       cell.className = 'arrow-cell';
       const val = grid[r][c];
       if (val === null) {
         cell.classList.add('empty');
       } else {
-        cell.textContent = ARROW_CHAR;
-        // 根据方向设置旋转
-        cell.style.transform = `rotate(${val.rotate}deg)`;
-        cell.dataset.r = r;
-        cell.dataset.c = c;
+        // 设置颜色
         const removable = _isRemovable(grid, r, c);
-        const color = removable ? DIR_COLORS[val.dir] : DIR_COLORS_DIMMED[val.dir];
+        const color = removable ? DIR_COLORS[val] : DIR_COLORS_DIMMED[val];
+        cell.textContent = val;
         cell.style.color = color;
         cell.style.textShadow = removable ? `0 0 16px ${color}60, 0 2px 4px rgba(0,0,0,0.5)` : 'none';
+        if (!removable) cell.classList.add('dimmed');
+        cell.dataset.r = r;
+        cell.dataset.c = c;
         if (s.hintCells.some(([hr, hc]) => hr === r && hc === c)) {
           cell.classList.add('hint-highlight');
         }
-        // 因为旋转了，需要确保在动画时保持旋转
-        cell.dataset.rotate = val.rotate;
       }
       board.appendChild(cell);
     }
