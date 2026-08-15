@@ -1,6 +1,6 @@
 /**
  * ➡️ 箭头消除（长折线箭头版）
- * 使用 ➜ 旋转实现四个方向，折线特征明显
+ * 使用 ➢（长折线箭头）旋转实现四个方向
  */
 if (!window.TOOL_REGISTRY) window.TOOL_REGISTRY = {};
 
@@ -8,8 +8,8 @@ let _arrowState = null;
 let _arrowHintTimer = null;
 
 const MAX_LEVEL = 268;
-// ---- 长折线箭头：使用 ➜ ----
-const ARROW_CHAR = '➜';
+// ---- 长折线箭头：使用 ➢ (U+27A2) ----
+const ARROW_CHAR = '➢';
 const DIR_LIST = [
   { id: 'up', dx: 0, dy: -1, rotate: 270 },
   { id: 'down', dx: 0, dy: 1, rotate: 90 },
@@ -119,7 +119,7 @@ function renderArrowPuzzle() {
       <div id="arrowStatus" style="text-align:center;color:var(--text-muted);font-size:13px;margin-top:10px;min-height:20px;">${t('arrow.desc')}</div>
     </div>
     <style>
-      .arrow-cell{aspect-ratio:1;background:#2c3d4f;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:clamp(30px, 7.5vw, 46px);font-weight:900;color:#dbeafe;box-shadow:0 3px 0 #0f171f, inset 0 -2px 4px rgba(0,0,0,0.3);transition:all 0.1s;cursor:pointer;touch-action:manipulation;text-shadow:0 2px 4px rgba(0,0,0,0.5);}
+      .arrow-cell{aspect-ratio:1;background:#2c3d4f;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:clamp(32px, 8vw, 50px);font-weight:900;color:#dbeafe;box-shadow:0 3px 0 #0f171f, inset 0 -2px 4px rgba(0,0,0,0.3);transition:all 0.1s;cursor:pointer;touch-action:manipulation;text-shadow:0 2px 4px rgba(0,0,0,0.5);}
       .arrow-cell:active{transform:scale(0.92);}
       .arrow-cell.empty{background:#1f2c38;box-shadow:inset 0 2px 6px rgba(0,0,0,0.4);color:transparent;pointer-events:none;text-shadow:none;}
       .arrow-cell.wrong{background:#a03a4a!important;animation:shake 0.2s;}
