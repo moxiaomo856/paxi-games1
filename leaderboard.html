@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>🏆 每日排行榜</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(1200px 600px at 50% -100px, #1c2244, #0f1222);
+      color: #e8ebfa;
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .container {
+      max-width: 500px;
+      width: 100%;
+      background: #181c36;
+      border-radius: 24px;
+      padding: 24px 20px 30px;
+      border: 1px solid #2c3260;
+      box-shadow: 0 16px 30px rgba(0,0,0,0.6);
+    }
+    h1 {
+      text-align: center;
+      font-size: 26px;
+      color: #fbbf24;
+      margin-top: 0;
+      margin-bottom: 20px;
+    }
+    .date-label {
+      text-align: center;
+      color: #8b93bd;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .rank-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+      background: #0f1222;
+      border-radius: 10px;
+      font-size: 15px;
+    }
+    .rank-item .pos {
+      font-weight: 700;
+      color: #7c9bff;
+      width: 40px;
+      flex-shrink: 0;
+    }
+    .rank-item .addr {
+      flex: 1;
+      margin: 0 8px;
+      font-family: monospace;
+      font-size: 13px;
+      color: #8b93bd;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rank-item .score {
+      font-weight: 700;
+      color: #fbbf24;
+      flex-shrink: 0;
+    }
+    .rank-item.top1 { background: #2a2a1a; border: 1px solid #fbbf24; }
+    .rank-item.top2 { border: 1px solid #8b93bd; }
+    .rank-item.top3 { border: 1px solid #cd7f32; }
+    .empty {
+      text-align: center;
+      color: #8b93bd;
+      padding: 40px 0;
+    }
+    .btn-back {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      margin-top: 18px;
+      background: #31475e;
+      border: none;
+      border-radius: 60px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #ecf5ff;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+      box-shadow: 0 6px 0 #121b24;
+      transition: 0.06s linear;
+    }
+    .btn-back:active {
+      transform: translateY(4px);
+      box-shadow: 0 2px 0 #121b24;
+    }
+    .btn-back:hover {
+      background: #3d5a7a;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>🏆 每日排行榜</h1>
+  <div class="date-label" id="todayDate"></div>
+  <div id="rankList"></div>
+  <button class="btn-back" onclick="history.back()">← 返回大厅</button>
+</div>
+
+<script>
+  (function() {
+    // ---- 显示昨日日期（每日凌晨2点更新） ----
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const dateStr = yesterday.toISOString().slice(0, 10);
+    document.getElementById('todayDate').textContent = '📅 ' + dateStr;
+
+    // ---- 读取本地存储 ----
+    let allData = {};
+    try {
+      allData = JSON.parse(localStorage.getItem('paxi_leaderboard') || '{}');
+    } catch (e) {
+      allData = {};
+    }
+
+    // ---- 过滤昨日数据并按分数降序 ----
+    const yesterdayData = Object.entries(allData)
+      .filter(([addr, entry]) => entry && entry.date === dateStr)
+      .map(([addr, entry]) => ({ addr, score: entry.score }))
+      .sort((a, b) => b.score - a.score);
+
+    const container = document.getElementById('rankList');
+
+    if (yesterdayData.length === 0) {
+      container.innerHTML = '<div class="empty">📭 昨日暂无数据<br>快来挑战吧！</div>';
+      return;
+    }
+
+    // ---- 取前20名 ----
+    const top = yesterdayData.slice(0, 20);
+    let html = '';
+    top.forEach((item, index) => {
+      const rank = index + 1;
+      let cls = 'rank-item';
+      if (rank === 1) cls += ' top1';
+      else if (rank === 2) cls += ' top2';
+      else if (rank === 3) cls += ' top3';
+
+      // 地址脱敏显示
+      let addrDisplay = item.addr;
+      if (item.addr.length > 12) {
+        addrDisplay = item.addr.slice(0, 6) + '…' + item.addr.slice(-4);
+      }
+
+      html += `
+        <div class="${cls}">
+          <span class="pos">#${rank}</span>
+          <span class="addr">${addrDisplay}</span>
+          <span class="score">${item.score}</span>
+        </div>
+      `;
+    });
+    container.innerHTML = html;
+  })();
+</script>
+</body>
+</html>
