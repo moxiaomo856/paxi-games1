@@ -60,7 +60,8 @@
       <button id="btnLeaderboard">🏆 排行榜</button>
       <button id="btnFaucet">🎁 空投</button>
       <button id="btnWallet">连接钱包</button>
-      <button id="btnNickname" style="display:none;">✏️ 昵称</button>
+      <!-- 管理员按钮已注释 -->
+      <!-- <button id="btnAdmin" title="Admin">⚙️</button> -->
     </div>
   </div>
 
@@ -121,29 +122,6 @@
       document.getElementById('btnLeaderboard').onclick = () => {
         window.location.href = 'leaderboard.html';
       };
-      document.getElementById('btnNickname').onclick = () => {
-        if (!state.connected) {
-          showToast('请先连接钱包', 'error');
-          return;
-        }
-        const current = localStorage.getItem('paxi_nickname') || '';
-        const newName = prompt('请输入你的昵称（最多12个字符）：', current);
-        if (newName !== null) {
-          const trimmed = newName.trim().slice(0, 12);
-          if (trimmed) {
-            localStorage.setItem('paxi_nickname', trimmed);
-            // 更新昵称映射，供排行榜使用
-            const addr = state.wallet.address;
-            const map = JSON.parse(localStorage.getItem('paxi_nickname_map') || '{}');
-            map[addr] = trimmed;
-            localStorage.setItem('paxi_nickname_map', JSON.stringify(map));
-            showToast('✅ 昵称已更新为：' + trimmed, 'success');
-            updateWalletUI();
-          } else {
-            showToast('❌ 昵称不能为空', 'error');
-          }
-        }
-      };
     })();
 
     function _openBurnPanel() {
@@ -181,6 +159,7 @@
   <script src="common/compat.js" defer></script>
   <script src="common/paxi-sdk.js" defer></script>
   <script src="common/game-pay.js" defer></script>
+  <!-- <script src="common/admin.js" defer></script> --> <!-- 已注释 -->
   <script src="common/faucet.js" defer></script>
   <script src="common/prc-burn.js" defer></script>
   <script>
@@ -188,17 +167,11 @@
       const btn = document.getElementById('btnWallet');
       const addr = document.getElementById('walletAddr');
       const bal = document.getElementById('walletBalance');
-      const nickBtn = document.getElementById('btnNickname');
       if (!btn) return;
       if (state.connected && state.wallet) {
         btn.textContent = t('shell.disconnect');
-        const nickname = localStorage.getItem('paxi_nickname');
         if (addr) {
-          if (nickname) {
-            addr.textContent = '👤 ' + nickname;
-          } else {
-            addr.textContent = state.wallet.address.slice(0, 10) + '...' + state.wallet.address.slice(-6);
-          }
+          addr.textContent = state.wallet.address.slice(0, 10) + '...' + state.wallet.address.slice(-6);
           addr.style.display = 'inline';
         }
         if (bal) {
@@ -209,12 +182,10 @@
             bal.style.display = 'none';
           }
         }
-        if (nickBtn) nickBtn.style.display = 'inline-block';
       } else {
         btn.textContent = t('shell.connect');
         if (addr) addr.style.display = 'none';
         if (bal) bal.style.display = 'none';
-        if (nickBtn) nickBtn.style.display = 'none';
       }
     };
 
@@ -224,6 +195,7 @@
         if (state.connected) disconnectWallet();
         else { await connectWallet(); refreshBalance(); }
       };
+      // document.getElementById('btnAdmin').onclick = () => PaxiAdmin.open(); // 已注释
       document.getElementById('btnFaucet') && (document.getElementById('btnFaucet').onclick = () => PaxiFaucet.openClaim());
     });
   </script>

@@ -258,3 +258,65 @@ window.GamePay = {
     if (reg.bind) reg.bind();
   },
 };
+// ========== 排行榜工具函数（供游戏调用） ==========
+window.Leaderboard = {
+  // 保存等级排行榜数据
+  saveLevelScore(gameId, address, level, nickname) {
+    try {
+      const key = 'paxi_leaderboard_' + gameId;
+      const data = JSON.parse(localStorage.getItem(key) || '{}');
+      if (!data[address] || level > data[address].level) {
+        data[address] = { level: level, nickname: nickname || address.slice(0, 8) };
+        localStorage.setItem(key, JSON.stringify(data));
+      }
+    } catch (e) {}
+  },
+  
+  // 保存日累计排行榜数据
+  saveDailyScore(gameId, address, count, nickname) {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const key = 'paxi_daily_' + gameId;
+      const data = JSON.parse(localStorage.getItem(key) || '{}');
+      if (!data[address]) {
+        data[address] = { daily: {}, nickname: nickname || address.slice(0, 8) };
+      }
+      if (!data[address].daily[today]) {
+        data[address].daily[today] = 0;
+      }
+      data[address].daily[today] += count;
+      if (nickname) data[address].nickname = nickname;
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (e) {}
+  },
+  
+  // 获取等级排行榜
+  getLevelRankings(gameId, limit = 50) {
+    try {
+      const key = 'paxi_leaderboard_' + gameId;
+      const data = JSON.parse(localStorage.getItem(key) || '{}');
+      return Object.entries(data)
+        .map(([addr, d]) => ({ address: addr, level: d.level || 0, nickname: d.nickname || addr.slice(0, 8) }))
+        .sort((a, b) => b.level - a.level)
+        .slice(0, limit);
+    } catch (e) { return []; }
+  },
+  
+  // 获取日累计排行榜
+  getDailyRankings(gameId, limit = 50) {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const key = 'paxi_daily_' + gameId;
+      const data = JSON.parse(localStorage.getItem(key) || '{}');
+      return Object.entries(data)
+        .filter(([addr, d]) => d.daily && d.daily[today] > 0)
+        .map(([addr, d]) => ({ 
+          address: addr, 
+          count: d.daily[today] || 0, 
+          nickname: d.nickname || addr.slice(0, 8) 
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, limit);
+    } catch (e) { return []; }
+  }
+};

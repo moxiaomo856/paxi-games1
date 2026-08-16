@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>🏆 每日排行榜</title>
+  <title>🏆 排行榜 - Arrow Puzzle</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -14,7 +14,7 @@
       font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
       display: flex;
       justify-content: center;
-      align-items: center;
+      align-items: flex-start;
       padding: 20px;
     }
     .container {
@@ -28,16 +28,41 @@
     }
     h1 {
       text-align: center;
-      font-size: 26px;
+      font-size: 24px;
       color: #fbbf24;
       margin-top: 0;
-      margin-bottom: 20px;
+      margin-bottom: 6px;
     }
-    .date-label {
+    .subtitle {
       text-align: center;
       color: #8b93bd;
       font-size: 13px;
       margin-bottom: 16px;
+    }
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .tab-bar button {
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid #2c3260;
+      border-radius: 10px;
+      background: #0f1222;
+      color: #8b93bd;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab-bar button.active {
+      background: #2c3260;
+      color: #fbbf24;
+      border-color: #fbbf24;
+    }
+    .tab-bar button:hover {
+      border-color: #7c9bff;
     }
     .rank-item {
       display: flex;
@@ -47,7 +72,7 @@
       margin-bottom: 6px;
       background: #0f1222;
       border-radius: 10px;
-      font-size: 15px;
+      font-size: 14px;
     }
     .rank-item .pos {
       font-weight: 700;
@@ -58,9 +83,9 @@
     .rank-item .addr {
       flex: 1;
       margin: 0 8px;
-      font-family: system-ui, "Microsoft YaHei", sans-serif;
-      font-size: 14px;
-      color: #e8ebfa;
+      font-family: monospace;
+      font-size: 13px;
+      color: #8b93bd;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -73,6 +98,7 @@
     .rank-item.top1 { background: #2a2a1a; border: 1px solid #fbbf24; }
     .rank-item.top2 { border: 1px solid #8b93bd; }
     .rank-item.top3 { border: 1px solid #cd7f32; }
+    .rank-item.me { border: 1px solid #7c9bff; }
     .empty {
       text-align: center;
       color: #8b93bd;
@@ -102,68 +128,160 @@
     .btn-back:hover {
       background: #3d5a7a;
     }
+    .date-label {
+      text-align: center;
+      color: #8b93bd;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+    .rank-note {
+      text-align: center;
+      color: #8b93bd;
+      font-size: 11px;
+      margin-top: 8px;
+      border-top: 1px solid #2c3260;
+      padding-top: 12px;
+    }
   </style>
 </head>
 <body>
 <div class="container">
-  <h1>🏆 每日排行榜</h1>
-  <div class="date-label" id="todayDate"></div>
+  <h1>🏆 排行榜</h1>
+  <div class="subtitle">➡️ 箭头解谜</div>
+  
+  <div class="tab-bar">
+    <button id="tabLevel" class="active">🏔️ 等级榜</button>
+    <button id="tabDaily">📊 日累计榜</button>
+  </div>
+  
+  <div class="date-label" id="todayDate">📅 今日数据</div>
   <div id="rankList"></div>
-  <button class="btn-back" onclick="history.back()">← 返回大厅</button>
+  
+  <div class="rank-note">💡 连接钱包后自动记录 · 每日凌晨重置</div>
+  <button class="btn-back" onclick="history.back()">← 返回游戏</button>
 </div>
 
 <script>
-  (function() {
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const dateStr = yesterday.toISOString().slice(0, 10);
-    document.getElementById('todayDate').textContent = '📅 ' + dateStr;
-
-    let allData = {};
+(function() {
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('todayDate').textContent = '📅 ' + today;
+  
+  let currentTab = 'level';
+  const container = document.getElementById('rankList');
+  
+  // 获取当前钱包地址
+  function getWalletAddress() {
     try {
-      allData = JSON.parse(localStorage.getItem('paxi_leaderboard') || '{}');
+      if (typeof state !== 'undefined' && state.connected && state.wallet) {
+        return state.wallet.address;
+      }
     } catch (e) {}
-
-    // 获取昵称映射
-    let nickMap = {};
+    return null;
+  }
+  
+  // 获取昵称
+  function getNicknames() {
     try {
-      nickMap = JSON.parse(localStorage.getItem('paxi_nickname_map') || '{}');
-    } catch (e) {}
-
-    const yesterdayData = Object.entries(allData)
-      .filter(([addr, entry]) => entry && entry.date === dateStr)
-      .map(([addr, entry]) => {
-        const displayName = nickMap[addr] || addr.slice(0, 6) + '…' + addr.slice(-4);
-        return { addr, score: entry.score, displayName };
-      })
-      .sort((a, b) => b.score - a.score);
-
-    const container = document.getElementById('rankList');
-
-    if (yesterdayData.length === 0) {
-      container.innerHTML = '<div class="empty">📭 昨日暂无数据<br>快来挑战吧！</div>';
-      return;
+      return JSON.parse(localStorage.getItem('paxi_nicknames') || '{}');
+    } catch { return {}; }
+  }
+  
+  function renderRankings(type) {
+    const myAddr = getWalletAddress();
+    const nicknames = getNicknames();
+    
+    try {
+      let list = [];
+      const key = 'paxi_arrow_leaderboard';
+      const raw = localStorage.getItem(key);
+      if (!raw) {
+        container.innerHTML = '<div class="empty">📭 暂无数据<br>快来挑战吧！</div>';
+        return;
+      }
+      const data = JSON.parse(raw);
+      
+      if (type === 'level') {
+        list = Object.entries(data)
+          .filter(([a, d]) => d.maxLevel > 0)
+          .map(([a, d]) => ({
+            address: a,
+            nickname: d.nickname || nicknames[a] || a.slice(0, 8),
+            score: d.maxLevel || 0
+          }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 50);
+      } else {
+        list = Object.entries(data)
+          .filter(([a, d]) => d.daily && d.daily[today] > 0)
+          .map(([a, d]) => ({
+            address: a,
+            nickname: d.nickname || nicknames[a] || a.slice(0, 8),
+            score: d.daily[today] || 0
+          }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 50);
+      }
+      
+      if (list.length === 0) {
+        container.innerHTML = '<div class="empty">📭 暂无数据<br>快来挑战吧！</div>';
+        return;
+      }
+      
+      let html = '';
+      list.forEach((item, index) => {
+        const rank = index + 1;
+        let cls = 'rank-item';
+        if (rank === 1) cls += ' top1';
+        else if (rank === 2) cls += ' top2';
+        else if (rank === 3) cls += ' top3';
+        if (item.address === myAddr) cls += ' me';
+        
+        const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '#' + rank;
+        const label = type === 'level' ? '关' : '关';
+        
+        html += `
+          <div class="${cls}">
+            <span class="pos">${medal}</span>
+            <span class="addr">${item.nickname}${item.address === myAddr ? ' 👈' : ''}</span>
+            <span class="score">${item.score} ${label}</span>
+          </div>
+        `;
+      });
+      
+      container.innerHTML = html;
+      
+    } catch (e) {
+      container.innerHTML = '<div class="empty">⚠️ 加载数据失败</div>';
     }
-
-    const top = yesterdayData.slice(0, 20);
-    let html = '';
-    top.forEach((item, index) => {
-      const rank = index + 1;
-      let cls = 'rank-item';
-      if (rank === 1) cls += ' top1';
-      else if (rank === 2) cls += ' top2';
-      else if (rank === 3) cls += ' top3';
-      html += `
-        <div class="${cls}">
-          <span class="pos">#${rank}</span>
-          <span class="addr">${item.displayName}</span>
-          <span class="score">${item.score}</span>
-        </div>
-      `;
+  }
+  
+  // 标签切换
+  document.getElementById('tabLevel').onclick = function() {
+    currentTab = 'level';
+    document.querySelectorAll('.tab-bar button').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    renderRankings('level');
+  };
+  
+  document.getElementById('tabDaily').onclick = function() {
+    currentTab = 'daily';
+    document.querySelectorAll('.tab-bar button').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    renderRankings('daily');
+  };
+  
+  // 初始渲染
+  renderRankings('level');
+  
+  // 监听钱包变化（如果有状态变化）
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('storage', function(e) {
+      if (e.key === 'paxi_arrow_leaderboard' || e.key === 'paxi_nicknames') {
+        renderRankings(currentTab);
+      }
     });
-    container.innerHTML = html;
-  })();
+  }
+})();
 </script>
 </body>
 </html>

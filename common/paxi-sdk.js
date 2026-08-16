@@ -33,7 +33,6 @@ function fromBase64(b64) {
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
-// 纯字符串/BigInt 精度转换：'5' -> '5000000'
 function parseFloatToRawUnits(amountStr, decimals) {
   if (amountStr === null || amountStr === undefined) return '0';
   const str = String(amountStr).trim();
@@ -49,7 +48,7 @@ function parseFloatToRawUnits(amountStr, decimals) {
 }
 function paxiToUpaxi(amountStr) { return parseFloatToRawUnits(amountStr, PAXI_CFG().decimals); }
 
-// ---------- 错误映射（节选自 toolbox） ----------
+// ---------- 错误映射 ----------
 const PAXI_ERROR_KEYWORDS = [
   { pattern: /insufficient fund/i, msg: t('pay.balanceShort') },
   { pattern: /account sequence mismatch|expected.*got/i, msg: '账户序列号不匹配，可能已发过其他交易，请重试' },
@@ -67,13 +66,32 @@ function mapError(code, rawLog) {
   return '未知错误';
 }
 
+// ========== 刷新游戏界面（钱包状态变化时） ==========
+function _refreshGameUI() {
+  const root = document.getElementById('gameRoot');
+  if (!root) return;
+  const currentGame = window._currentGameId || 
+    (window.location.pathname.match(/games\/([^/]+)/) || [])[1];
+  if (!currentGame) return;
+  const reg = window.TOOL_REGISTRY && window.TOOL_REGISTRY[currentGame];
+  if (reg && reg.render) {
+    // 保存当前游戏状态（避免丢失）
+    const oldState = window._arrowState || null;
+    root.innerHTML = reg.render();
+    if (reg.bind) reg.bind();
+    // 恢复游戏状态（如果有）
+    if (oldState && currentGame === 'arrow-puzzle') {
+      // 箭头解谜的状态已在 startArrowGame 中恢复
+    }
+  }
+}
+
 // ============================================================
 // 钱包连接（PaxiHub）
 // ============================================================
 async function connectWallet() {
   if (typeof window.paxihub === 'undefined') {
     showToast(t('shell.installWallet'), 'error');
-    // 移动端：深度链接跳转 PaxiHub，未安装则跳下载页
     if (/Mobi/.test(navigator.userAgent)) {
       window.location.href = 'paxi://hub/explorer?url=' + encodeURIComponent(window.location.href);
       setTimeout(() => {
@@ -88,6 +106,8 @@ async function connectWallet() {
     state.connected = true;
     if (typeof updateWalletUI === 'function') updateWalletUI();
     showToast(t('wallet.connected'), 'success');
+    // 刷新游戏界面
+    setTimeout(_refreshGameUI, 300);
     return true;
   } catch (e) {
     showToast(t('wallet.connectFail', { m: e.message || e }), 'error');
@@ -101,6 +121,8 @@ function disconnectWallet() {
   state.balance = null;
   if (typeof updateWalletUI === 'function') updateWalletUI();
   showToast(t('wallet.disconnected'));
+  // 刷新游戏界面
+  setTimeout(_refreshGameUI, 300);
 }
 
 async function refreshBalance() {
@@ -116,11 +138,10 @@ async function refreshBalance() {
 }
 
 // ============================================================
-// 交易构建 & 签名 & 广播（来自 toolbox 已验证管线）
+// 交易构建 & 签名 & 广播
 // ============================================================
 async function simulateGas(messages, memo, sequence, pubKey) {
   const denom = getDenom();
-  // 【已优化】静态估算下调：MsgSend 实际约 5.5~6.5 万 gas；留出小余地
   let gasSum = 0;
   for (const msg of messages) {
     if (msg.typeUrl?.includes('MsgSend')) gasSum += 65000;
@@ -128,7 +149,6 @@ async function simulateGas(messages, memo, sequence, pubKey) {
     else gasSum += 120000;
   }
   const dummyGas = gasSum + 20000;
-  // 模拟 Gas 单价降低：0.25 → 0.08 upaxi/gas，仅用于 simulate 时不会因为 Fee 太少失败
   const dummyFee = { amount: [PaxiCosmJS.coins(Math.max(1, Math.floor(dummyGas * 0.08)).toString(), denom)[0]], gasLimit: BigInt(dummyGas) };
 
   const pubkeyBytes = typeof pubKey === 'string' ? fromBase64(pubKey) : new Uint8Array(pubKey);
@@ -171,7 +191,6 @@ async function buildSignAndBroadcast(messages, memo, gasLimit, wallet) {
   const accountNumber = Number(account.account_number);
   const sequence = Number(account.sequence);
 
-  // Gas：模拟 + 5% 缓冲（原为15%），失败降级为静态估算，均已下调
   let totalGas = gasLimit || 120000;
   if (!gasLimit) {
     try {
@@ -181,8 +200,6 @@ async function buildSignAndBroadcast(messages, memo, gasLimit, wallet) {
   }
 
   const txBody = PaxiCosmJS.TxBody.fromPartial({ messages, memo });
-  // 【优化】Gas 单价：原 0.25 → 0.08 upaxi/gas，成本省 ~70%
-  //  0.08 * 8万 gas ≈ 0.0064 PAXI 手续费
   const fee = {
     amount: [PaxiCosmJS.coins(Math.max(1, Math.floor(totalGas * 0.08)).toString(), cfg.denom)[0]],
     gasLimit: BigInt(totalGas),
@@ -228,10 +245,6 @@ async function buildSignAndBroadcast(messages, memo, gasLimit, wallet) {
   return broadcastRes;
 }
 
-// 构建并发送一笔支付（自动随机选择收款地址）
-// amountWhole: PAXI 数量；prc20Amount(可选): PRC20 代币数量（config.prc20 启用时生效）
-// 两者在同一笔交易中转给同一个随机收款地址。
-// 返回 { txhash } ；抛错 = 失败
 async function payPaxi(amountWhole, memo, prc20Amount) {
   const cfg = PAXI_CFG();
   if (!state.connected || !state.wallet) {
@@ -250,7 +263,6 @@ async function payPaxi(amountWhole, memo, prc20Amount) {
     value: PaxiCosmJS.MsgSend.encode(msg).finish(),
   })];
 
-  // PRC20 代币转账（MsgExecuteContract transfer），与 PAXI 同一笔交易
   const p20 = cfg.prc20;
   if (prc20Amount > 0 && p20 && p20.enabled && p20.contract) {
     const tokenRaw = parseFloatToRawUnits(String(prc20Amount), p20.decimals || 6);
@@ -272,13 +284,11 @@ async function payPaxi(amountWhole, memo, prc20Amount) {
   const code = res?.tx_response?.code;
   if (!txhash) throw new Error(mapError(code, res?.tx_response?.raw_log || res?.message));
   if (code !== 0 && code !== undefined) throw new Error(mapError(code, res.tx_response.raw_log));
-  // 轮询上链确认（不阻塞太久）
   const poll = await pollTxStatus(txhash, 20);
   if (poll.confirmed && !poll.success) throw new Error(mapError(poll.code, poll.rawLog));
   return { txhash, payee: to };
 }
 
-// 交易上链轮询
 async function pollTxStatus(txhash, maxAttempts = 25, intervalMs = 3000) {
   for (let i = 0; i < maxAttempts; i++) {
     try {

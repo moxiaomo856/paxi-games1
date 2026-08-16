@@ -15,7 +15,6 @@ function showToast(msg, type = '') {
   setTimeout(() => toast.remove(), 4000);
 }
 
-// 显式挂到 window：与 paxi-sdk.js 的全局检测保持一致
 window.updateWalletUI = function () {
   const btn = document.getElementById('shellWalletBtn');
   const addr = document.getElementById('shellWalletAddr');
@@ -96,6 +95,9 @@ body{margin:0;background:radial-gradient(1200px 600px at 50% -100px,#1c2244,var(
 
 window.PaxiShell = {
   boot(gameId, gameTitle) {
+    // 保存当前游戏ID到全局，供钱包状态变化时刷新
+    window._currentGameId = gameId;
+    
     const style = document.createElement('style');
     style.textContent = SHELL_CSS;
     document.head.appendChild(style);
@@ -129,7 +131,6 @@ window.PaxiShell = {
       else { await connectWallet(); refreshBalance(); }
     };
 
-    // 立即同步一次钱包 UI（如果之前已连接）
     if (typeof updateWalletUI === 'function') updateWalletUI();
 
     const reg = window.TOOL_REGISTRY && window.TOOL_REGISTRY[gameId];
