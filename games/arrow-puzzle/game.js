@@ -1,6 +1,5 @@
 /**
- * ➡️ 箭头消除（长方形棋盘 + 飞出动画）
- * 棋盘尺寸：横向 5~8 列，纵向 7~13 行，竖屏适配
+ * ➡️ 箭头消除（纯符号箭头版）
  */
 if (!window.TOOL_REGISTRY) window.TOOL_REGISTRY = {};
 
@@ -8,64 +7,51 @@ let _arrowState = null;
 let _arrowHintTimer = null;
 
 const MAX_LEVEL = 268;
-
-// ---- 方向映射 ----
-const DIR_MAP = {
-  '↑': { dx: 0, dy: -1 },
-  '↓': { dx: 0, dy: 1 },
-  '←': { dx: -1, dy: 0 },
-  '→': { dx: 1, dy: 0 }
-};
-const ARROWS = ['↑', '↓', '←', '→'];
-
-// ---- 方向颜色 ----
+const DIR_LIST = [
+  { id: 'up', dx: 0, dy: -1, rotate: 0 },
+  { id: 'down', dx: 0, dy: 1, rotate: 0 },
+  { id: 'left', dx: -1, dy: 0, rotate: 0 },
+  { id: 'right', dx: 1, dy: 0, rotate: 0 }
+];
 const DIR_COLORS = {
-  '↑': '#ff6b6b',
-  '↓': '#4dabf7',
-  '←': '#69db7c',
-  '→': '#da77f2'
+  'up': '#ff6b6b',
+  'down': '#4dabf7',
+  'left': '#69db7c',
+  'right': '#da77f2'
 };
 const DIR_COLORS_DIMMED = {
-  '↑': '#6b4a4a',
-  '↓': '#4a5a6b',
-  '←': '#4a6b4a',
-  '→': '#6b4a6b'
+  'up': '#6b4a4a',
+  'down': '#4a5a6b',
+  'left': '#4a6b4a',
+  'right': '#6b4a6b'
 };
 
-// ============================================================
-// 棋盘尺寸：返回 { cols, rows }，cols 控制横向，rows 控制纵向
-// ============================================================
 function _getBoardSize(level) {
-  if (level <= 10) return { cols: 5, rows: 7 };
-  if (level <= 50) return { cols: 5, rows: 8 };
-  if (level <= 100) return { cols: 6, rows: 9 };
-  if (level <= 150) return { cols: 6, rows: 10 };
-  if (level <= 200) return { cols: 7, rows: 11 };
-  if (level <= 250) return { cols: 7, rows: 12 };
-  return { cols: 8, rows: 13 };  // 251~268
+  // 难度加大2倍：格子数增加约50-80%
+  if (level <= 10) return { rows: 8, cols: 12 };     // 1-10关: 8×12
+  if (level <= 50) return { rows: 9, cols: 12 };     // 11-50关: 9×12
+  if (level <= 100) return { rows: 10, cols: 14 };   // 51-100关: 10×14
+  if (level <= 150) return { rows: 11, cols: 15 };   // 101-150关: 11×15
+  if (level <= 200) return { rows: 12, cols: 16 };   // 151-200关: 12×16
+  if (level <= 250) return { rows: 13, cols: 17 };   // 201-250关: 13×17
+  return { rows: 14, cols: 18 };                      // 251-268关: 14×18
 }
 
-// ============================================================
-// 生成棋盘
-// ============================================================
 function _generateGrid(level) {
-  const size = _getBoardSize(level);
-  const cols = size.cols;
-  const rows = size.rows;
-  const emptyRatio = Math.min(0.5, 0.1 + level * 0.002);
-  // grid 是 [rows][cols]
+  const { rows, cols } = _getBoardSize(level);
+  // 空位比例降低，让棋盘更满，难度增加
+  const emptyRatio = Math.min(0.35, 0.05 + level * 0.0015);
   const grid = Array(rows).fill(null).map(() => Array(cols).fill(null));
   let placed = 0;
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       if (Math.random() < emptyRatio) continue;
-      const shuffled = ARROWS.slice().sort(() => Math.random() - 0.5);
+      const shuffled = DIR_LIST.slice().sort(() => Math.random() - 0.5);
       for (const dir of shuffled) {
-        const d = DIR_MAP[dir];
-        const nr = r + d.dy, nc = c + d.dx;
+        const nr = r + dir.dy, nc = c + dir.dx;
         if (nr < 0 || nr >= rows || nc < 0 || nc >= cols || grid[nr][nc] === null) {
-          grid[r][c] = dir;
+          grid[r][c] = { dir: dir.id, rotate: dir.rotate };
           placed++;
           break;
         }
@@ -73,46 +59,54 @@ function _generateGrid(level) {
     }
   }
 
-  // 如果箭头太少，强行补一些
-  const minPlaced = Math.max(4, Math.min(cols, rows));
-  if (placed < minPlaced) {
+  const minDimension = Math.min(rows, cols);
+  if (placed < Math.max(6, minDimension * 1.5)) {
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         if (grid[r][c] === null) {
-          const candidates = ARROWS.filter(dir => {
-            const d = DIR_MAP[dir];
-            const nr = r + d.dy, nc = c + d.dx;
+          const candidates = DIR_LIST.filter(dir => {
+            const nr = r + dir.dy, nc = c + dir.dx;
             return nr < 0 || nr >= rows || nc < 0 || nc >= cols || grid[nr][nc] === null;
           });
           if (candidates.length > 0) {
-            grid[r][c] = candidates[0];
+            const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+            grid[r][c] = { dir: chosen.id, rotate: chosen.rotate };
             placed++;
           }
         }
-        if (placed >= minPlaced * 2) break;
+        if (placed >= minDimension * 2.5) break;
       }
-      if (placed >= minPlaced * 2) break;
+      if (placed >= minDimension * 2.5) break;
     }
   }
   return grid;
 }
 
-// ============================================================
-// 检查箭头是否可消除（指向空格或边界）
-// ============================================================
 function _isRemovable(grid, r, c) {
-  const ch = grid[r][c];
-  if (!ch) return false;
-  const d = DIR_MAP[ch];
-  const nr = r + d.dy, nc = c + d.dx;
+  const cell = grid[r][c];
+  if (!cell) return false;
+  const dirInfo = DIR_LIST.find(d => d.id === cell.dir);
+  if (!dirInfo) return false;
+  const nr = r + dirInfo.dy, nc = c + dirInfo.dx;
   const rows = grid.length;
-  const cols = grid[0].length;
+  const cols = grid[0] ? grid[0].length : 0;
   return nr < 0 || nr >= rows || nc < 0 || nc >= cols || grid[nr][nc] === null;
 }
 
-// ============================================================
-// 渲染
-// ============================================================
+function _arrowHTML(dir, color) {
+  const arrowSymbols = {
+    'up': '↑',
+    'down': '↓',
+    'left': '←',
+    'right': '→'
+  };
+  return `
+    <div class="arrow-symbol" style="color:${color};font-size:2.2rem;font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.6);line-height:1;user-select:none;">
+      ${arrowSymbols[dir] || '?'}
+    </div>
+  `;
+}
+
 function renderArrowPuzzle() {
   return `
     <div class="card">
@@ -123,7 +117,7 @@ function renderArrowPuzzle() {
         ${GamePay.roundsBadge('arrow-puzzle')}
       </div>
       <div style="position:relative;width:100%;max-width:420px;margin:0 auto;">
-        <div id="arrowBoard" style="display:grid;gap:5px;padding:10px;background:#18212b;border-radius:16px;width:100%;touch-action:manipulation;"></div>
+        <div id="arrowBoard" style="display:grid;gap:4px;padding:8px;background:#18212b;border-radius:16px;width:100%;aspect-ratio:1;touch-action:manipulation;"></div>
         <div id="gpOverlay" style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);border-radius:16px;z-index:10;padding:10px;box-sizing:border-box;overflow:hidden;">
           ${GamePay.overlayHTML('arrow-puzzle', 'game.arrow-puzzle', 'arrow.controls')}
         </div>
@@ -142,22 +136,18 @@ function renderArrowPuzzle() {
         display:flex;
         align-items:center;
         justify-content:center;
-        font-size:clamp(20px, 5.5vw, 36px);
-        font-weight:900;
-        color:#dbeafe;
-        box-shadow:0 3px 0 #0f171f, inset 0 -2px 4px rgba(0,0,0,0.3);
+        box-shadow:0 2px 0 #0f171f, inset 0 -2px 4px rgba(0,0,0,0.3);
         transition:all 0.1s;
         cursor:pointer;
         touch-action:manipulation;
-        text-shadow:0 2px 4px rgba(0,0,0,0.5);
+        overflow:hidden;
+        padding:4px;
       }
-      .arrow-cell:active{transform:scale(0.92);}
+      .arrow-cell:active{transform:scale(0.90);}
       .arrow-cell.empty{
         background:#1f2c38;
         box-shadow:inset 0 2px 6px rgba(0,0,0,0.4);
-        color:transparent;
         pointer-events:none;
-        text-shadow:none;
       }
       .arrow-cell.wrong{background:#a03a4a!important;animation:shake 0.2s;}
       .arrow-cell.hint-highlight{
@@ -169,8 +159,16 @@ function renderArrowPuzzle() {
         pointer-events:none;
         z-index:5;
       }
-      .arrow-cell.dimmed .arrow-shaft{opacity:0.4;}
-      .arrow-cell.dimmed .arrow-head{opacity:0.4;}
+      .arrow-symbol{
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        width:100%;
+        height:100%;
+        font-size:clamp(1.2rem, 4vw, 2.4rem);
+        transition:all 0.1s;
+      }
+      .arrow-cell.dimmed .arrow-symbol{opacity:0.3;}
 
       @keyframes shake{0%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}100%{transform:translateX(0)}}
       #gpOverlay #gpOverlayTitle{font-size:20px!important;margin-bottom:8px!important;}
@@ -184,9 +182,6 @@ function bindArrowEvents() {
   GamePay.bindStart('arrow-puzzle', () => startArrowGame());
 }
 
-// ============================================================
-// 游戏控制
-// ============================================================
 function startArrowGame(keepScore) {
   if (!GamePay.consumeRound('arrow-puzzle')) return;
 
@@ -197,12 +192,14 @@ function startArrowGame(keepScore) {
   const prevLevel = keepScore && _arrowState ? _arrowState.level : 1;
   const prevHearts = keepScore && _arrowState ? _arrowState.hearts : 5;
 
+  const { rows, cols } = _getBoardSize(prevLevel);
   _arrowState = {
     level: prevLevel,
     score: prevScore,
     hearts: prevHearts,
     grid: null,
-    size: _getBoardSize(prevLevel),
+    rows: rows,
+    cols: cols,
     gameOver: false,
     levelCompleted: false,
     hintCells: [],
@@ -258,8 +255,8 @@ function _giveHint() {
   }
   const cells = [];
   const grid = s.grid;
-  const rows = s.size.rows;
-  const cols = s.size.cols;
+  const rows = s.grid.length;
+  const cols = s.grid[0] ? s.grid[0].length : 0;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       if (grid[r][c] !== null && _isRemovable(grid, r, c)) {
@@ -303,7 +300,6 @@ function _handleClick(r, c, cellEl) {
   const grid = s.grid;
   if (grid[r][c] === null) return;
 
-  // ---- 判断是否可消除 ----
   if (!_isRemovable(grid, r, c)) {
     s.hearts--;
     document.getElementById('arrowHearts').textContent = s.hearts;
@@ -317,12 +313,12 @@ function _handleClick(r, c, cellEl) {
     return;
   }
 
-  // ---- 飞出动画 ----
-  const dir = grid[r][c];
-  const d = DIR_MAP[dir];
-  const rows = s.size.rows;
-  const cols = s.size.cols;
-  const distance = Math.max(cols, rows) * 1.5;
+  const cellData = grid[r][c];
+  const dirInfo = DIR_LIST.find(d => d.id === cellData.dir);
+  const d = { dx: dirInfo.dx, dy: dirInfo.dy };
+  const rows = s.grid.length;
+  const cols = s.grid[0] ? s.grid[0].length : 0;
+  const distance = Math.max(rows, cols) * 1.5;
   const tx = d.dx * distance;
   const ty = d.dy * distance;
 
@@ -339,8 +335,7 @@ function _handleClick(r, c, cellEl) {
   board.appendChild(clone);
 
   cellEl.classList.add('empty');
-  cellEl.textContent = '';
-  cellEl.style.background = '';
+  cellEl.innerHTML = '';
   grid[r][c] = null;
   s.score++;
   document.getElementById('arrowScore').textContent = s.score;
@@ -357,7 +352,6 @@ function _handleClick(r, c, cellEl) {
 
   s.hintCells = [];
 
-  // ---- 延迟检查是否清空 ----
   setTimeout(() => {
     let remaining = 0;
     for (let rr = 0; rr < rows; rr++) {
@@ -378,7 +372,9 @@ function _handleClick(r, c, cellEl) {
           s.hearts = 5;
           s.gameOver = false;
           s.levelCompleted = false;
-          s.size = _getBoardSize(s.level);
+          const { rows: newRows, cols: newCols } = _getBoardSize(s.level);
+          s.rows = newRows;
+          s.cols = newCols;
           s.grid = _generateGrid(s.level);
           s.hintCells = [];
           s.hintUsed = 0;
@@ -388,7 +384,6 @@ function _handleClick(r, c, cellEl) {
         }, 1200);
       }
     } else {
-      // 检查是否还有可消除的箭头
       let hasRemovable = false;
       for (let rr = 0; rr < rows; rr++) {
         for (let cc = 0; cc < cols; cc++) {
@@ -417,6 +412,9 @@ function _handleClick(r, c, cellEl) {
 function _resetLevel() {
   const s = _arrowState;
   if (!s) return;
+  const { rows, cols } = _getBoardSize(s.level);
+  s.rows = rows;
+  s.cols = cols;
   s.grid = _generateGrid(s.level);
   s.hearts = 5;
   s.gameOver = false;
@@ -428,20 +426,13 @@ function _resetLevel() {
   document.getElementById('arrowStatus').textContent = `🔄 已重置第 ${s.level} 关`;
 }
 
-// ============================================================
-// 渲染棋盘
-// ============================================================
 function _renderBoard() {
   const s = _arrowState;
   const board = document.getElementById('arrowBoard');
   if (!board || !s) return;
-  const cols = s.size.cols;
-  const rows = s.size.rows;
-
-  // 根据列数和行数设置网格
+  const rows = s.grid.length;
+  const cols = s.grid[0] ? s.grid[0].length : 0;
   board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-  board.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-  board.style.aspectRatio = `${cols} / ${rows}`;
 
   board.innerHTML = '';
   const grid = s.grid;
@@ -453,15 +444,12 @@ function _renderBoard() {
       if (val === null) {
         cell.classList.add('empty');
       } else {
-        // 设置颜色
         const removable = _isRemovable(grid, r, c);
-        const color = removable ? DIR_COLORS[val] : DIR_COLORS_DIMMED[val];
-        cell.textContent = val;
-        cell.style.color = color;
-        cell.style.textShadow = removable ? `0 0 16px ${color}60, 0 2px 4px rgba(0,0,0,0.5)` : 'none';
+        const color = removable ? DIR_COLORS[val.dir] : DIR_COLORS_DIMMED[val.dir];
         if (!removable) cell.classList.add('dimmed');
         cell.dataset.r = r;
         cell.dataset.c = c;
+        cell.innerHTML = _arrowHTML(val.dir, color);
         if (s.hintCells.some(([hr, hc]) => hr === r && hc === c)) {
           cell.classList.add('hint-highlight');
         }
