@@ -28,13 +28,13 @@ const DIR_COLORS_DIMMED = {
 
 function _getBoardSize(level) {
   // 难度加大2倍：格子数增加约50-80%
-  if (level <= 10) return { rows: 8, cols: 12 };     // 1-10关: 8×12
-  if (level <= 50) return { rows: 9, cols: 12 };     // 11-50关: 9×12
-  if (level <= 100) return { rows: 10, cols: 14 };   // 51-100关: 10×14
-  if (level <= 150) return { rows: 11, cols: 15 };   // 101-150关: 11×15
-  if (level <= 200) return { rows: 12, cols: 16 };   // 151-200关: 12×16
-  if (level <= 250) return { rows: 13, cols: 17 };   // 201-250关: 13×17
-  return { rows: 14, cols: 18 };                      // 251-268关: 14×18
+  if (level <= 10) return { rows: 10, cols: 6 };     // 1-10关: 10×6
+  if (level <= 50) return { rows: 10, cols: 7 };     // 11-50关: 9×12
+  if (level <= 100) return { rows: 10, cols: 8 };   // 51-100关: 10×14
+  if (level <= 150) return { rows: 12, cols: 9 };   // 101-150关: 11×15
+  if (level <= 200) return { rows: 12, cols: 10 };   // 151-200关: 12×16
+  if (level <= 250) return { rows: 14, cols: 11 };   // 201-250关: 13×17
+  return { rows: 14, cols: 12 };                      // 251-268关: 14×18
 }
 
 function _generateGrid(level) {
